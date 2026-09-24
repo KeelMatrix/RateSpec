@@ -15,9 +15,8 @@
 - Verification is sequential by default, cancellation-aware, and never uses wall-clock sleeps for replenishment.
 - Request factories own endpoint and partition details. Diagnostics and results never include request URLs, headers, partition values, response bodies, or raw exceptions.
 - The package performs no hidden external HTTP call for verification. Telemetry is best effort and suppressed during local validation with `KEELMATRIX_NO_TELEMETRY=1`.
-- The root `icon.png` is founder-owned. The conditional pack item may resolve it when present; do not create, copy, inspect, or modify icon bytes.
+- The root `icon.png` is supplied separately. The conditional pack item may resolve it when present; do not create, copy, inspect, or modify icon bytes.
 
 ## Validation
 
 Start with the matching test, then use the Release solution build/test, format verification, package inspection, vulnerability audit, and isolated package-consumer smoke described in `docs/DEV.md`. Do not modify unrelated repositories.
-
