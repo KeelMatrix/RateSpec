@@ -2,6 +2,7 @@ using System.Threading.RateLimiting;
 using KeelMatrix.RateSpec;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
@@ -55,4 +56,3 @@ static HttpRequestMessage CreateRequest(string partition)
     request.Headers.Add("X-Partition", partition);
     return request;
 }
-
