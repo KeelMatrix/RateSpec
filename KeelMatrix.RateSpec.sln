@@ -1,0 +1,45 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31903.59
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "src", "src", "{D81E19F8-832D-40F5-8312-E14A255B9F2B}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeelMatrix.RateSpec", "src\KeelMatrix.RateSpec\KeelMatrix.RateSpec.csproj", "{FD14C1AA-239A-4FF4-BF56-9560627E2E53}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "tests", "tests", "{A09F052A-5BBC-4623-B409-9F6B770437B7}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "KeelMatrix.RateSpec.Tests", "tests\KeelMatrix.RateSpec.Tests\KeelMatrix.RateSpec.Tests.csproj", "{762E7655-7118-47A6-8A86-2CAD7DA94B46}"
+EndProject
+Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "smoke", "smoke", "{5B4A84F2-4265-4F96-9B03-4EA1A07426DE}"
+EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "RateSpec.ConsumerSmoke", "smoke\RateSpec.ConsumerSmoke\RateSpec.ConsumerSmoke.csproj", "{5049672D-71A1-45B7-AFE6-910FC0F18344}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(SolutionProperties) = preSolution
+		HideSolutionNode = FALSE
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{FD14C1AA-239A-4FF4-BF56-9560627E2E53}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{FD14C1AA-239A-4FF4-BF56-9560627E2E53}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{FD14C1AA-239A-4FF4-BF56-9560627E2E53}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{FD14C1AA-239A-4FF4-BF56-9560627E2E53}.Release|Any CPU.Build.0 = Release|Any CPU
+		{762E7655-7118-47A6-8A86-2CAD7DA94B46}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{762E7655-7118-47A6-8A86-2CAD7DA94B46}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{762E7655-7118-47A6-8A86-2CAD7DA94B46}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{762E7655-7118-47A6-8A86-2CAD7DA94B46}.Release|Any CPU.Build.0 = Release|Any CPU
+		{5049672D-71A1-45B7-AFE6-910FC0F18344}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{5049672D-71A1-45B7-AFE6-910FC0F18344}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{5049672D-71A1-45B7-AFE6-910FC0F18344}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{5049672D-71A1-45B7-AFE6-910FC0F18344}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(NestedProjects) = preSolution
+		{FD14C1AA-239A-4FF4-BF56-9560627E2E53} = {D81E19F8-832D-40F5-8312-E14A255B9F2B}
+		{762E7655-7118-47A6-8A86-2CAD7DA94B46} = {A09F052A-5BBC-4623-B409-9F6B770437B7}
+		{5049672D-71A1-45B7-AFE6-910FC0F18344} = {5B4A84F2-4265-4F96-9B03-4EA1A07426DE}
+	EndGlobalSection
+EndGlobal

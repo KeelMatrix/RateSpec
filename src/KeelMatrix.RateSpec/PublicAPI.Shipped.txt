@@ -1,0 +1,63 @@
+#nullable enable
+const KeelMatrix.RateSpec.RateVerifier.DefaultMaximumRequestCount = 100 -> int
+const KeelMatrix.RateSpec.RateVerifier.HardMaximumRequestCount = 1000 -> int
+KeelMatrix.RateSpec.RateContract
+KeelMatrix.RateSpec.RateContract.Client.get -> System.Net.Http.HttpClient!
+KeelMatrix.RateSpec.RateContract.RateContract(System.Net.Http.HttpClient! client, KeelMatrix.RateSpec.RateScenario! scenario) -> void
+KeelMatrix.RateSpec.RateContract.RateContract(System.Net.Http.HttpClient! client, System.Collections.Generic.IEnumerable<KeelMatrix.RateSpec.RateScenario!>! scenarios) -> void
+KeelMatrix.RateSpec.RateContract.Scenarios.get -> System.Collections.Generic.IReadOnlyList<KeelMatrix.RateSpec.RateScenario!>!
+KeelMatrix.RateSpec.RateExpectation
+KeelMatrix.RateSpec.RateExpectation.AcceptedPredicate.get -> System.Func<System.Net.Http.HttpResponseMessage!, bool>!
+KeelMatrix.RateSpec.RateExpectation.AcceptedRequestCount.get -> int
+KeelMatrix.RateSpec.RateExpectation.IsUnlimited.get -> bool
+KeelMatrix.RateSpec.RateExpectation.RejectedHeaderPredicates.get -> System.Collections.Generic.IReadOnlyDictionary<string!, System.Func<string?, bool>!>!
+KeelMatrix.RateSpec.RateExpectation.RejectedPredicate.get -> System.Func<System.Net.Http.HttpResponseMessage!, bool>!
+KeelMatrix.RateSpec.RateExpectation.RejectionStatusCode.get -> int?
+KeelMatrix.RateSpec.RateRequestFactory
+KeelMatrix.RateSpec.RateResponseObservation
+KeelMatrix.RateSpec.RateResponseObservation.PredicateMatched.get -> bool
+KeelMatrix.RateSpec.RateResponseObservation.RequestNumber.get -> int
+KeelMatrix.RateSpec.RateResponseObservation.StatusCode.get -> int?
+KeelMatrix.RateSpec.RateScenario
+KeelMatrix.RateSpec.RateScenario.Expectation.get -> KeelMatrix.RateSpec.RateExpectation!
+KeelMatrix.RateSpec.RateScenario.Kind.get -> KeelMatrix.RateSpec.RateScenarioKind
+KeelMatrix.RateSpec.RateScenarioKind
+KeelMatrix.RateSpec.RateScenarioKind.InitialBurst = 0 -> KeelMatrix.RateSpec.RateScenarioKind
+KeelMatrix.RateSpec.RateScenarioKind.PartitionIsolation = 1 -> KeelMatrix.RateSpec.RateScenarioKind
+KeelMatrix.RateSpec.RateScenarioKind.SharedPartition = 2 -> KeelMatrix.RateSpec.RateScenarioKind
+KeelMatrix.RateSpec.RateScenarioKind.Unlimited = 3 -> KeelMatrix.RateSpec.RateScenarioKind
+KeelMatrix.RateSpec.RateScenarioResult
+KeelMatrix.RateSpec.RateScenarioResult.FailureKind.get -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateScenarioResult.Message.get -> string!
+KeelMatrix.RateSpec.RateScenarioResult.Observations.get -> System.Collections.Generic.IReadOnlyList<KeelMatrix.RateSpec.RateResponseObservation!>!
+KeelMatrix.RateSpec.RateScenarioResult.RequestsIssued.get -> int
+KeelMatrix.RateSpec.RateScenarioResult.Succeeded.get -> bool
+KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.Cancelled = 9 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.EarlyRejection = 1 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.ExpectedSharingNotObserved = 4 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.HeaderMismatch = 7 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.HostFailure = 10 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.MissingRejection = 2 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.None = 0 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.PartitionLeakage = 3 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.SafetyCeilingExceeded = 8 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.StatusMismatch = 6 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationFailureKind.UnexpectedLimit = 5 -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationResult
+KeelMatrix.RateSpec.RateVerificationResult.FailureKind.get -> KeelMatrix.RateSpec.RateVerificationFailureKind
+KeelMatrix.RateSpec.RateVerificationResult.Message.get -> string!
+KeelMatrix.RateSpec.RateVerificationResult.RequestsIssued.get -> int
+KeelMatrix.RateSpec.RateVerificationResult.Scenarios.get -> System.Collections.Generic.IReadOnlyList<KeelMatrix.RateSpec.RateScenarioResult!>!
+KeelMatrix.RateSpec.RateVerificationResult.Succeeded.get -> bool
+KeelMatrix.RateSpec.RateVerifier
+KeelMatrix.RateSpec.RateVerifier.MaximumRequestCount.get -> int
+KeelMatrix.RateSpec.RateVerifier.RateVerifier(int maximumRequestCount = 100) -> void
+KeelMatrix.RateSpec.RateVerifier.VerifyAsync(KeelMatrix.RateSpec.RateContract! contract, System.Threading.CancellationToken cancellationToken = default(System.Threading.CancellationToken)) -> System.Threading.Tasks.Task<KeelMatrix.RateSpec.RateVerificationResult!>!
+static KeelMatrix.RateSpec.RateExpectation.Burst(int acceptedRequestCount, System.Func<System.Net.Http.HttpResponseMessage!, bool>? acceptedPredicate = null, System.Func<System.Net.Http.HttpResponseMessage!, bool>? rejectedPredicate = null, int? rejectionStatusCode = null, System.Collections.Generic.IReadOnlyDictionary<string!, System.Func<string?, bool>!>? rejectedHeaderPredicates = null) -> KeelMatrix.RateSpec.RateExpectation!
+static KeelMatrix.RateSpec.RateExpectation.BurstWithSuccessStatusRange(int acceptedRequestCount, int minimumStatusCode, int maximumStatusCode, int? rejectionStatusCode = null, System.Collections.Generic.IReadOnlyDictionary<string!, System.Func<string?, bool>!>? rejectedHeaderPredicates = null) -> KeelMatrix.RateSpec.RateExpectation!
+static KeelMatrix.RateSpec.RateExpectation.Unlimited(int requestCount, System.Func<System.Net.Http.HttpResponseMessage!, bool>? acceptedPredicate = null) -> KeelMatrix.RateSpec.RateExpectation!
+static KeelMatrix.RateSpec.RateScenario.InitialBurst(KeelMatrix.RateSpec.RateRequestFactory! requestFactory, KeelMatrix.RateSpec.RateExpectation! expectation) -> KeelMatrix.RateSpec.RateScenario!
+static KeelMatrix.RateSpec.RateScenario.PartitionIsolation(KeelMatrix.RateSpec.RateRequestFactory! partitionARequestFactory, KeelMatrix.RateSpec.RateRequestFactory! partitionBRequestFactory, KeelMatrix.RateSpec.RateExpectation! expectation) -> KeelMatrix.RateSpec.RateScenario!
+static KeelMatrix.RateSpec.RateScenario.SharedPartition(KeelMatrix.RateSpec.RateRequestFactory! firstRequestFactory, KeelMatrix.RateSpec.RateRequestFactory! secondRequestFactory, KeelMatrix.RateSpec.RateExpectation! expectation) -> KeelMatrix.RateSpec.RateScenario!
+static KeelMatrix.RateSpec.RateScenario.Unlimited(KeelMatrix.RateSpec.RateRequestFactory! requestFactory, KeelMatrix.RateSpec.RateExpectation! expectation) -> KeelMatrix.RateSpec.RateScenario!

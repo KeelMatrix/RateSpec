@@ -1,0 +1,50 @@
+<Project>
+  <PropertyGroup>
+    <LangVersion>latestMajor</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <Deterministic>true</Deterministic>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <DebugType>portable</DebugType>
+    <ContinuousIntegrationBuild Condition="'$(CI)' == 'true'">true</ContinuousIntegrationBuild>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+    <EmbedUntrackedSources>true</EmbedUntrackedSources>
+    <Version>0.1.0</Version>
+    <PackageVersion>$(Version)</PackageVersion>
+    <AssemblyVersion>0.1.0.0</AssemblyVersion>
+    <FileVersion>0.1.0.0</FileVersion>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(Configuration)' == 'Release'">
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(IsPackable)' == 'true'">
+    <Authors>KeelMatrix</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/KeelMatrix/RateSpec</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/KeelMatrix/RateSpec</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
+  </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' == 'true'">
+    <None Remove=".env" />
+    <None Remove=".env.local" />
+    <None Remove="keelmatrix.telemetry.json" />
+  </ItemGroup>
+
+  <Target Name="RejectSensitivePackageFiles" AfterTargets="_GetPackageFiles" Condition="'$(IsPackable)' == 'true'">
+    <ItemGroup>
+      <_SensitivePackageFile Include="@(_PackageFiles)"
+        Condition="$([System.String]::Copy('%(_PackageFiles.Identity)').ToLowerInvariant().EndsWith('.env')) Or $([System.String]::Copy('%(_PackageFiles.Identity)').ToLowerInvariant().EndsWith('.env.local')) Or $([System.String]::Copy('%(_PackageFiles.Identity)').ToLowerInvariant().EndsWith('.pfx')) Or $([System.String]::Copy('%(_PackageFiles.Identity)').ToLowerInvariant().EndsWith('.snk')) Or $([System.String]::Copy('%(_PackageFiles.Identity)').ToLowerInvariant().EndsWith('keelmatrix.telemetry.json'))" />
+    </ItemGroup>
+    <Error Condition="'@(_SensitivePackageFile)' != ''" Text="Refusing to pack sensitive file(s): @(_SensitivePackageFile, ', ')." />
+  </Target>
+</Project>
+
