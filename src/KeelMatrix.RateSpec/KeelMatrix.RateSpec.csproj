@@ -8,6 +8,16 @@
     <Description>Verify ASP.NET Core rate-limit bursts, rejection, and partition isolation with deterministic integration tests.</Description>
     <PackageTags>aspnetcore;rate-limiting;ratelimiter;testing;http;api;integration-testing</PackageTags>
     <EnablePublicApiAnalyzers>true</EnablePublicApiAnalyzers>
+    <Authors>KeelMatrix</Authors>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/KeelMatrix/RateSpec</RepositoryUrl>
+    <PackageProjectUrl>https://github.com/KeelMatrix/RateSpec</PackageProjectUrl>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>icon.png</PackageIcon>
+    <IncludeSymbols>true</IncludeSymbols>
+    <SymbolPackageFormat>snupkg</SymbolPackageFormat>
+    <PublishRepositoryUrl>true</PublishRepositoryUrl>
   </PropertyGroup>
 
   <ItemGroup>
@@ -21,8 +31,7 @@
     <AdditionalFiles Include="PublicAPI.Shipped.txt" />
     <AdditionalFiles Include="PublicAPI.Unshipped.txt" />
     <None Include="README.md" Pack="true" PackagePath="README.md" />
-    <None Include="$(MSBuildProjectDirectory)/../../LICENSE" Pack="true" PackagePath="LICENSE" />
+    <None Include="$(MSBuildProjectDirectory)/../../LICENSE" Pack="true" PackagePath="" />
     <None Include="$(MSBuildProjectDirectory)/../../icon.png" Condition="Exists('$(MSBuildProjectDirectory)/../../icon.png')" Pack="true" PackagePath="icon.png" />
   </ItemGroup>
 </Project>
-
