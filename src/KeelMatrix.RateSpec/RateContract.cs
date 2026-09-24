@@ -30,7 +30,7 @@ public sealed class RateContract
             throw new ArgumentException("A rate contract cannot contain a null scenario.", nameof(scenarios));
         }
 
-        Scenarios = materialized;
+        Scenarios = Array.AsReadOnly(materialized);
     }
 
     /// <summary>Gets the caller-owned HTTP client used for all scenarios.</summary>
@@ -39,4 +39,3 @@ public sealed class RateContract
     /// <summary>Gets the ordered, immutable scenario set.</summary>
     public IReadOnlyList<RateScenario> Scenarios { get; }
 }
-

@@ -186,7 +186,6 @@ public sealed class RateVerifier
             return first;
         }
 
-        var beforeSecond = observations.Count;
         var second = await RunBurstAsync(
             client,
             scenario.SecondRequestFactory!,
@@ -200,11 +199,6 @@ public sealed class RateVerifier
                 observations,
                 RateVerificationFailureKind.PartitionLeakage,
                 "The second partition was rejected after the first partition consumed its burst.");
-        }
-
-        if (!second.Succeeded && observations.Count == beforeSecond)
-        {
-            return second;
         }
 
         return second.Succeeded
