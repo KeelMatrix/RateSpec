@@ -1,4 +1,4 @@
-namespace KeelMatrix.RateSpec;
+﻿namespace KeelMatrix.RateSpec;
 
 /// <summary>Groups one or more observable rate-limit scenarios for one HTTP client.</summary>
 public sealed class RateContract

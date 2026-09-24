@@ -1,4 +1,4 @@
-namespace KeelMatrix.RateSpec;
+﻿namespace KeelMatrix.RateSpec;
 
 /// <summary>Identifies the bounded observable behavior exercised by a scenario.</summary>
 public enum RateScenarioKind

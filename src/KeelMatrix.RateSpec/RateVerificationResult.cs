@@ -1,4 +1,4 @@
-namespace KeelMatrix.RateSpec;
+﻿namespace KeelMatrix.RateSpec;
 
 /// <summary>Classifies a verification verdict without including request or response content.</summary>
 public enum RateVerificationFailureKind

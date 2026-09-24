@@ -1,10 +1,10 @@
+﻿using System.Threading.RateLimiting;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.AspNetCore.Routing;
 using Microsoft.AspNetCore.TestHost;
 using Microsoft.Extensions.DependencyInjection;
-using Microsoft.AspNetCore.Routing;
-using System.Threading.RateLimiting;
 
 namespace KeelMatrix.RateSpec.Tests;
 

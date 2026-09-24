@@ -1,4 +1,4 @@
-namespace KeelMatrix.RateSpec;
+﻿namespace KeelMatrix.RateSpec;
 
 /// <summary>Describes the observable response contract for a bounded scenario.</summary>
 public sealed class RateExpectation

@@ -1,4 +1,4 @@
-namespace KeelMatrix.RateSpec;
+﻿namespace KeelMatrix.RateSpec;
 
 /// <summary>Creates one request for a bounded verification step.</summary>
 /// <param name="requestNumber">The zero-based request number within the scenario.</param>
