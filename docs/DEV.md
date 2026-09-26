@@ -35,3 +35,12 @@ dotnet run --project smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj 
 
 The smoke setup creates its own isolated restore folder and package source mapping. It does not use a project reference to the shipping library.
 
+## CI package gate
+
+CI runs the Release tests and formatting checks on Ubuntu, Windows, and macOS, then builds the package and symbol package,
+inspects both archives, audits dependencies, and runs the package-consumer smoke test from the generated `.nupkg`.
+
+The archive check calls `Test-PackageArchive -AllowMissingIcon` before the manually supplied repository icon is present.
+That explicit pre-release allowance keeps the candidate verifiable without treating a missing `icon.png` as release-ready.
+When `icon.png` is present, the same check requires a 512×512 PNG no larger than 200 KB, `icon.png` package metadata,
+and byte-identical package contents.
