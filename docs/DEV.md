@@ -20,20 +20,33 @@ The full local gate is:
 
 ```powershell
 $env:KEELMATRIX_NO_TELEMETRY = "1"
-dotnet restore KeelMatrix.RateSpec.sln --configfile NuGet.config
-dotnet build KeelMatrix.RateSpec.sln -c Release --no-restore
-dotnet test KeelMatrix.RateSpec.sln -c Release --no-build
-dotnet format KeelMatrix.RateSpec.sln --verify-no-changes
-dotnet pack src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj -c Release --no-build -o artifacts/package
+dotnet restore tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --configfile NuGet.config --packages artifacts/test-packages
+dotnet build tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj -c Release --no-restore
+dotnet test tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj -c Release --no-build --no-restore
+dotnet format src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --verify-no-changes --no-restore
+dotnet format tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --verify-no-changes --no-restore
+dotnet restore src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --configfile NuGet.config --packages artifacts/package-packages
+dotnet pack src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj -c Release --no-restore -o artifacts/package
+
+$package = Get-ChildItem artifacts/package -Filter "KeelMatrix.RateSpec.*.nupkg" | Where-Object Name -notlike "*.snupkg"
+$symbols = Get-ChildItem artifacts/package -Filter "KeelMatrix.RateSpec.*.snupkg"
+pwsh ./scripts/Validate-PackageArchive.ps1 -PackagePath $package.FullName -SymbolPackagePath $symbols.FullName -AllowMissingIcon
 ```
 
-The package-consumer smoke test uses `PackageReference` to the produced package from an isolated local feed:
+The package-consumer smoke test is a separate phase because the solution includes the consumer before the local package
+exists. It uses `PackageReference` to the produced package from an isolated local feed:
 
 ```powershell
-dotnet run --project smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj -c Release
+dotnet restore smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj --configfile smoke/NuGet.config --packages artifacts/smoke-packages
+dotnet build smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj -c Release --no-restore
+dotnet run --project smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj -c Release --no-build --no-restore
 ```
 
 The smoke setup creates its own isolated restore folder and package source mapping. It does not use a project reference to the shipping library.
+
+The tag-triggered release workflow runs `pwsh ./scripts/Validate-Release.ps1 -Tag vX.Y.Z` before building or publishing. That
+check requires the tag, package version, and a dated, finalized changelog entry to agree. The release job then validates the
+exact `.nupkg` and `.snupkg` set before using NuGet Trusted Publishing.
 
 ## CI package gate
 

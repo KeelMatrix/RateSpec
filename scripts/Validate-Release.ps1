@@ -1,0 +1,70 @@
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory)]
+    [string] $Tag,
+
+    [string] $RepositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
+)
+
+$ErrorActionPreference = 'Stop'
+
+if ($Tag -notmatch '^v(?<version>0|[1-9]\d*)\.(?<minor>0|[1-9]\d*)\.(?<patch>0|[1-9]\d*)$') {
+    throw "Release tag '$Tag' must use the vX.Y.Z format."
+}
+
+$version = $Matches.version + '.' + $Matches.minor + '.' + $Matches.patch
+$props = [xml](Get-Content -Raw (Join-Path $RepositoryRoot 'Directory.Build.props'))
+$configuredVersion = ([string]$props.Project.PropertyGroup.Version).Trim()
+if ($configuredVersion -ne $version) {
+    throw "Directory.Build.props Version '$configuredVersion' does not match release version '$version'."
+}
+
+$packageProps = [xml](Get-Content -Raw (Join-Path $RepositoryRoot 'Directory.Packages.props'))
+$packageVersionNodes = @($packageProps.Project.ItemGroup.PackageVersion | Where-Object Include -eq 'KeelMatrix.RateSpec')
+if ($packageVersionNodes.Count -ne 1 -or ([string]$packageVersionNodes[0].Version).Trim() -ne $version) {
+    throw "Directory.Packages.props KeelMatrix.RateSpec version does not match release version '$version'."
+}
+
+$project = [xml](Get-Content -Raw (Join-Path $RepositoryRoot 'src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj'))
+$packageId = $project.Project.PropertyGroup.PackageId
+if ($packageId -ne 'KeelMatrix.RateSpec') {
+    throw "Shipping project PackageId '$packageId' is not KeelMatrix.RateSpec."
+}
+
+$changelogPath = Join-Path $RepositoryRoot 'CHANGELOG.md'
+$changelog = Get-Content -Raw $changelogPath
+if ($changelog -notmatch '(?m)^## \[Unreleased\]\s*$') {
+    throw 'CHANGELOG.md must retain an Unreleased section.'
+}
+
+$escapedVersion = [regex]::Escape($version)
+$heading = [regex]::Match($changelog, "(?m)^## \[$escapedVersion\] - (?<date>\d{4}-\d{2}-\d{2})\s*$")
+if (-not $heading.Success) {
+    throw "CHANGELOG.md must contain a dated [$version] release heading."
+}
+
+$releaseSectionStart = $heading.Index + $heading.Length
+$nextHeading = [regex]::Match($changelog.Substring($releaseSectionStart), '(?m)^##\s+')
+$releaseSection = if ($nextHeading.Success) {
+    $changelog.Substring($releaseSectionStart, $nextHeading.Index)
+}
+else {
+    $changelog.Substring($releaseSectionStart)
+}
+
+if ($releaseSection -match '(?i)\bplanned\b|\bunreleased\b|\btbd\b|not yet published') {
+    throw "CHANGELOG.md [$version] section is not finalized."
+}
+
+try {
+    $releaseDate = [DateTime]::ParseExact($heading.Groups['date'].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
+}
+catch {
+    throw "CHANGELOG.md [$version] contains an invalid release date."
+}
+
+if ($releaseDate.Date -gt [DateTime]::UtcNow.Date) {
+    throw "CHANGELOG.md [$version] release date cannot be in the future."
+}
+
+Write-Output "Release metadata is valid for $Tag ($version)."

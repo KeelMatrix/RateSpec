@@ -20,6 +20,9 @@ var scenario = RateScenario.InitialBurst(
 var result = await new RateVerifier().VerifyAsync(new RateContract(client, scenario));
 ```
 
+RateSpec targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. The package and tests
+are validated in repository CI on Windows, Linux, and macOS. Earlier .NET versions are not supported.
+
 The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. With those defaults, a declared `rejectionStatusCode` must be outside 200-299; a 2xx rejection status contradicts the two default predicates and is rejected while the expectation is created. When either predicate is custom, the caller must ensure that the declared rejection status does not satisfy the accepted predicate and does satisfy the rejected predicate. Use `BurstWithSuccessStatusRange` or custom predicates when the endpoint has a more specific contract.
 
 ## Initial burst and rejection

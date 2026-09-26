@@ -1,0 +1,103 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*.*.*'
+
+permissions:
+  contents: read
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: '1'
+  KEELMATRIX_NO_TELEMETRY: '1'
+  RELEASE_TAG: ${{ github.ref_name }}
+
+jobs:
+  publish:
+    name: Validate and publish package
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      - name: Check out tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.425
+
+      - name: Validate release metadata
+        shell: pwsh
+        run: pwsh ./scripts/Validate-Release.ps1 -Tag $env:RELEASE_TAG
+
+      - name: Restore tests and library
+        shell: pwsh
+        run: >-
+          dotnet restore
+          tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj
+          --configfile NuGet.config
+          --packages "${{ runner.temp }}/nuget-packages"
+
+      - name: Build tests and library
+        shell: pwsh
+        run: |
+          $version = $env:RELEASE_TAG.Substring(1)
+          dotnet build tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --configuration Release --no-restore -p:Version=$version -p:PackageVersion=$version
+
+      - name: Run tests
+        shell: pwsh
+        run: >-
+          dotnet test
+          tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+
+      - name: Verify formatting
+        shell: pwsh
+        run: |
+          dotnet format src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --verify-no-changes --no-restore
+          dotnet format tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --verify-no-changes --no-restore
+
+      - name: Pack release artifacts
+        shell: pwsh
+        run: |
+          $version = $env:RELEASE_TAG.Substring(1)
+          dotnet pack src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --configuration Release --no-build --no-restore --output artifacts/release -p:Version=$version -p:PackageVersion=$version
+
+      - name: Inspect exact release artifact set
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:RELEASE_TAG.Substring(1)
+          $packages = @(Get-ChildItem -LiteralPath artifacts/release -File | Where-Object Name -eq "KeelMatrix.RateSpec.$version.nupkg")
+          $symbols = @(Get-ChildItem -LiteralPath artifacts/release -File | Where-Object Name -eq "KeelMatrix.RateSpec.$version.snupkg")
+          $expected = @("KeelMatrix.RateSpec.$version.nupkg", "KeelMatrix.RateSpec.$version.snupkg")
+          $unexpected = @(Get-ChildItem -LiteralPath artifacts/release -File | Where-Object Name -notin $expected)
+          if ($packages.Count -ne 1 -or $symbols.Count -ne 1 -or $unexpected.Count -ne 0) {
+              throw "Expected exactly $($expected -join ' and ')."
+          }
+
+          & pwsh ./scripts/Validate-PackageArchive.ps1 -PackagePath $packages[0].FullName -SymbolPackagePath $symbols[0].FullName
+
+      - name: NuGet login (OIDC)
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: dmitriyzen
+
+      - name: Push package
+        shell: pwsh
+        env:
+          NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          $version = $env:RELEASE_TAG.Substring(1)
+          dotnet nuget push "artifacts/release/KeelMatrix.RateSpec.$version.nupkg" --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          dotnet nuget push "artifacts/release/KeelMatrix.RateSpec.$version.snupkg" --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json

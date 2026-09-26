@@ -29,6 +29,11 @@ See the [RateSpec behavior guide](docs/behavior-guide.md) for partition isolatio
 
 RateSpec is designed for in-memory or test-host integration tests. Production base addresses and unbounded user-controlled partition cardinality are not v1 targets; the latter can itself exhaust resources. Use a load-testing tool for capacity or throughput questions.
 
+## Supported Frameworks and Platforms
+
+The package targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. The repository's
+Release CI validates the package and tests on Windows, Linux, and macOS runners. Earlier .NET versions are not supported.
+
 ## License
 
 MIT. See [LICENSE](LICENSE).
