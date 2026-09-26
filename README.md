@@ -21,7 +21,7 @@ var result = await new RateVerifier().VerifyAsync(contract, cancellationToken);
 Assert.True(result.Succeeded, result.Message);
 ```
 
-The request factory belongs to the application, so it can provide the headers or route data used by its partition policy. Verification is sequential by default, bounded, cancellable, and never retries automatically.
+The request factory belongs to the application, so it can provide the headers or route data used by its partition policy. Verification is sequential by default, bounded, cancellable, and never retries automatically. A verdict after at least one request, including a failed verdict or cancellation after a request, makes one best-effort coarse activation call; preflight or no-request verdicts do not. Telemetry failure never changes the result.
 
 ## Documentation
 
@@ -32,4 +32,3 @@ RateSpec is designed for in-memory or test-host integration tests. Production ba
 ## License
 
 MIT. See [LICENSE](LICENSE).
-

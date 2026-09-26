@@ -20,11 +20,11 @@ var scenario = RateScenario.InitialBurst(
 var result = await new RateVerifier().VerifyAsync(new RateContract(client, scenario));
 ```
 
-The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. Use `BurstWithSuccessStatusRange` or custom predicates when the endpoint has a more specific contract.
+The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. With those defaults, a declared `rejectionStatusCode` must be outside 200-299; a 2xx rejection status contradicts the two default predicates and is rejected while the expectation is created. When either predicate is custom, the caller must ensure that the declared rejection status does not satisfy the accepted predicate and does satisfy the rejected predicate. Use `BurstWithSuccessStatusRange` or custom predicates when the endpoint has a more specific contract.
 
 ## Initial burst and rejection
 
-`RateExpectation.Burst(n)` issues exactly `n` accepted-response checks followed by one rejection check. The verifier sends them sequentially and never retries. A request factory receives only its zero-based request number and is responsible for creating a fresh request message.
+`RateExpectation.Burst(n)` issues exactly `n` accepted-response checks followed by one rejection check. The verifier sends them sequentially and never retries. A request factory receives only its zero-based request number and is responsible for creating a fresh request message. Each factory sequence starts at zero; the second factory in a partition scenario also receives zero for its first request.
 
 ## Partition A/B isolation
 
@@ -39,7 +39,7 @@ var scenario = RateScenario.PartitionIsolation(
 
 RateSpec exhausts A, then checks that B can begin its own burst. It never interprets or prints the partition values. `SharedPartition` performs the inverse contract: after the first factory consumes its burst, the first request from the second factory must be rejected.
 
-When two distinct ASP.NET Core policies can produce equal partition keys, test them as separate endpoint scenarios. Named policies are expected to keep their limiter state isolated. This catches policy-selection and namespace mistakes without relying on configuration inspection.
+When two distinct ASP.NET Core policies can produce equal partition keys, test them as separate endpoint scenarios. Named policies are expected to keep their limiter state isolated. Inline policies should be tested separately with the same partition key and distinct limits, matching the collision shape documented in [ASP.NET Core issue #67326](https://github.com/dotnet/aspnetcore/issues/67326). This catches policy-selection and namespace mistakes without relying on configuration inspection.
 
 ## Unlimited endpoints
 
@@ -81,5 +81,4 @@ RateSpec deliberately verifies initial capacity and rejection only. It does not 
 
 Microsoft warns that partitioning on unbounded user-controlled input can exhaust memory and become a denial-of-service concern. Keep application partition cardinality bounded and intentional; RateSpec does not sanitize or cap the application's partitioner.
 
-The documented path is an in-memory or test-host `HttpClient`. The package makes no hidden network call for verification and does not provide a convenience API for probing arbitrary production addresses. Its optional coarse activation telemetry is documented in [Privacy](../PRIVACY.md) and never changes a verdict.
-
+The documented path is an in-memory or test-host `HttpClient`. The package makes no hidden network call for verification and does not provide a convenience API for probing arbitrary production addresses. After a verdict with at least one request issued, including a failed verdict or cancellation after a request, it makes one best-effort coarse activation call. Preflight or no-request verdicts make no activation call. Telemetry failure never changes a verdict; the privacy boundary and opt-out are documented in [Privacy](../PRIVACY.md).
