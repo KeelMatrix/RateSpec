@@ -73,6 +73,10 @@ jobs:
         shell: pwsh
         run: pwsh ./tests/Validate-Release.Tests.ps1
 
+      - name: Test vulnerability audit parser
+        shell: pwsh
+        run: pwsh ./tests/Validate-VulnerabilityAudit.Tests.ps1
+
   package:
     name: Package, archive, and consumer gate
     needs: test
@@ -144,52 +148,10 @@ jobs:
           if ([string]::IsNullOrWhiteSpace($auditText)) {
               throw 'The vulnerability audit produced no report; failing closed.'
           }
-
-          try {
-              $report = $auditText | ConvertFrom-Json
+          & pwsh -NoProfile -File ./scripts/Validate-VulnerabilityAudit.ps1 -ReportJson $auditText
+          if ($LASTEXITCODE -ne 0) {
+              throw "The vulnerability audit parser failed with exit code $LASTEXITCODE."
           }
-          catch {
-              throw "The vulnerability audit did not produce valid JSON; failing closed. $($_.Exception.Message)"
-          }
-
-          $projects = @($report.projects)
-          if ($report.version -ne 1 -or $projects.Count -eq 0) {
-              throw 'The vulnerability audit report shape is unsupported; failing closed.'
-          }
-
-          $findings = @(
-              foreach ($project in $projects) {
-                  foreach ($framework in @($project.frameworks)) {
-                      $packages = @($framework.topLevelPackages) + @($framework.transitivePackages) | Where-Object { $null -ne $_ }
-                      foreach ($package in $packages) {
-                          $vulnerabilities = @($package.vulnerabilities) | Where-Object { $null -ne $_ }
-                          if ($vulnerabilities.Count -eq 0) {
-                              [pscustomobject]@{
-                                  Package = $package.id
-                                  Severity = 'unknown'
-                                  Advisory = 'The --vulnerable report listed a package without vulnerability details.'
-                              }
-                          }
-                          else {
-                              foreach ($vulnerability in $vulnerabilities) {
-                                  [pscustomobject]@{
-                                      Package = $package.id
-                                      Severity = $vulnerability.severity
-                                      Advisory = $vulnerability.advisoryurl
-                                  }
-                              }
-                          }
-                      }
-                  }
-              }
-          )
-
-          if ($findings.Count -ne 0) {
-              $summary = $findings | ForEach-Object { "$($_.Package) [$($_.Severity)] $($_.Advisory)" }
-              throw "The vulnerability audit reported advisories; failing closed: $($summary -join '; ')"
-          }
-
-          Write-Output 'Vulnerability audit found no advisories.'
 
       - name: Restore package consumer
         shell: pwsh
