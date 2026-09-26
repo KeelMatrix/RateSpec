@@ -110,15 +110,31 @@ public sealed class RateVerifierIntegrationTests
                 TestHostFactory.FixedPartition(context.Request.Headers["X-Partition"].ToString(), 2)),
             endpoints => endpoints.MapGet("/partitioned", () => Results.Ok()).RequireRateLimiting("partitioned"));
         using var client = server.CreateClient();
+        var firstRequestNumbers = new List<int>();
+        var secondRequestNumbers = new List<int>();
 
         var result = await VerifyAsync(
             client,
             RateScenario.SharedPartition(
-                _ => Request("/partitioned", "same"),
-                _ => Request("/partitioned", "same"),
+                requestNumber =>
+                {
+                    firstRequestNumbers.Add(requestNumber);
+                    return Request("/partitioned", "same");
+                },
+                requestNumber =>
+                {
+                    secondRequestNumbers.Add(requestNumber);
+                    return Request("/partitioned", "same");
+                },
                 RateExpectation.Burst(2)));
 
         Assert.True(result.Succeeded, result.Message);
+        Assert.Equal(3, firstRequestNumbers.Count);
+        Assert.Equal(0, firstRequestNumbers[0]);
+        Assert.Equal(1, firstRequestNumbers[1]);
+        Assert.Equal(2, firstRequestNumbers[2]);
+        Assert.Single(secondRequestNumbers);
+        Assert.Equal(0, secondRequestNumbers[0]);
     }
 
     [Fact]
@@ -154,6 +170,40 @@ public sealed class RateVerifierIntegrationTests
     }
 
     [Fact]
+    public async Task Inline_policy_partition_collision_is_reported_as_a_per_endpoint_failure()
+    {
+        // This mirrors the same-key loose-before-tight shape from https://github.com/dotnet/aspnetcore/issues/67326.
+        using var server = TestHostFactory.Create(
+            _ => { },
+            endpoints =>
+            {
+                endpoints.MapGet("/loose", () => Results.Ok())
+                    .RequireRateLimiting(new InlinePolicy(permitLimit: 1000));
+                endpoints.MapGet("/tight", () => Results.Ok())
+                    .RequireRateLimiting(new InlinePolicy(permitLimit: 2));
+            });
+        using var client = server.CreateClient();
+
+        var result = await new RateVerifier().VerifyAsync(
+            new RateContract(
+                client,
+                new[]
+                {
+                    RateScenario.Unlimited(
+                        _ => RequestWithClient("/loose", "alice"),
+                        RateExpectation.Unlimited(3)),
+                    RateScenario.InitialBurst(
+                        _ => RequestWithClient("/tight", "alice"),
+                        RateExpectation.Burst(2))
+                }));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.MissingRejection, result.FailureKind);
+        Assert.True(result.Scenarios[0].Succeeded, result.Scenarios[0].Message);
+        Assert.False(result.Scenarios[1].Succeeded);
+    }
+
+    [Fact]
     public async Task Endpoint_without_a_limiter_remains_unlimited_for_the_bounded_check()
     {
         using var server = TestHostFactory.Create(
@@ -168,6 +218,68 @@ public sealed class RateVerifierIntegrationTests
                 RateExpectation.Unlimited(5)));
 
         Assert.True(result.Succeeded, result.Message);
+    }
+
+    [Fact]
+    public async Task Mid_burst_request_factory_failure_is_classified_without_a_false_pass()
+    {
+        var sent = 0;
+        using var client = new HttpClient(new CountingHandler(() => sent++));
+
+        var result = await VerifyAsync(
+            client,
+            RateScenario.InitialBurst(
+                requestNumber => requestNumber == 1
+                    ? throw new InvalidOperationException("factory failure")
+                    : new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                RateExpectation.Burst(2)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.HostFailure, result.FailureKind);
+        Assert.Equal(1, sent);
+        Assert.DoesNotContain("factory failure", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Partial_rejection_before_the_declared_burst_does_not_pass()
+    {
+        using var server = TestHostFactory.Create(
+            options => options.AddFixedWindowLimiter("partial", limiter =>
+            {
+                limiter.PermitLimit = 1;
+                limiter.QueueLimit = 0;
+                limiter.Window = TimeSpan.FromMinutes(10);
+                limiter.AutoReplenishment = false;
+            }),
+            endpoints => endpoints.MapGet("/partial", () => Results.Ok()).RequireRateLimiting("partial"));
+        using var client = server.CreateClient();
+
+        var result = await VerifyAsync(
+            client,
+            RateScenario.InitialBurst(
+                _ => new HttpRequestMessage(HttpMethod.Get, "/partial"),
+                RateExpectation.Burst(2)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.EarlyRejection, result.FailureKind);
+    }
+
+    [Fact]
+    public async Task Endpoint_that_never_rejects_does_not_pass_a_required_rejection()
+    {
+        using var server = TestHostFactory.Create(
+            _ => { },
+            endpoints => endpoints.MapGet("/never-rejects", () => Results.Ok()));
+        using var client = server.CreateClient();
+
+        var result = await VerifyAsync(
+            client,
+            RateScenario.InitialBurst(
+                _ => new HttpRequestMessage(HttpMethod.Get, "/never-rejects"),
+                RateExpectation.Burst(1)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.MissingRejection, result.FailureKind);
     }
 
     [Fact]
@@ -252,6 +364,50 @@ public sealed class RateVerifierIntegrationTests
     }
 
     [Fact]
+    public async Task Failed_verdict_after_a_request_tracks_activation()
+    {
+        var activationCalls = 0;
+        using var client = new HttpClient(new CountingHandler(() => { }));
+
+        var result = await new RateVerifier(100, () => activationCalls++).VerifyAsync(
+            new RateContract(
+                client,
+                RateScenario.InitialBurst(
+                    _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                    RateExpectation.Burst(1))));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.MissingRejection, result.FailureKind);
+        Assert.Equal(2, result.RequestsIssued);
+        Assert.Equal(1, activationCalls);
+    }
+
+    [Fact]
+    public async Task Verdict_with_no_request_issued_does_not_track_activation()
+    {
+        var activationCalls = 0;
+        var factoryCalls = 0;
+        using var client = new HttpClient(new CountingHandler(() => { }));
+
+        var result = await new RateVerifier(1, () => activationCalls++).VerifyAsync(
+            new RateContract(
+                client,
+                RateScenario.InitialBurst(
+                    _ =>
+                    {
+                        factoryCalls++;
+                        return new HttpRequestMessage(HttpMethod.Get, "http://local.test/");
+                    },
+                    RateExpectation.Burst(1))));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.SafetyCeilingExceeded, result.FailureKind);
+        Assert.Equal(0, result.RequestsIssued);
+        Assert.Equal(0, factoryCalls);
+        Assert.Equal(0, activationCalls);
+    }
+
+    [Fact]
     public async Task Failure_diagnostics_do_not_echo_factory_exception_details()
     {
         const string secret = "tenant-secret-value";
@@ -274,6 +430,12 @@ public sealed class RateVerifierIntegrationTests
         Assert.Throws<ArgumentException>(() => RateExpectation.BurstWithSuccessStatusRange(1, 400, 200));
     }
 
+    [Fact]
+    public void Contradictory_default_rejection_status_fails_during_factory_creation()
+    {
+        Assert.Throws<ArgumentException>(() => RateExpectation.Burst(1, rejectionStatusCode: 200));
+    }
+
     private static async Task<RateVerificationResult> VerifyAsync(HttpClient client, RateScenario scenario) =>
         await new RateVerifier().VerifyAsync(new RateContract(client, scenario));
 
@@ -282,6 +444,31 @@ public sealed class RateVerifierIntegrationTests
         var request = new HttpRequestMessage(HttpMethod.Get, path);
         request.Headers.Add("X-Partition", partition);
         return request;
+    }
+
+    private static HttpRequestMessage RequestWithClient(string path, string client)
+    {
+        var separator = path.Contains('?') ? '&' : '?';
+        return new HttpRequestMessage(HttpMethod.Get, $"{path}{separator}client={client}");
+    }
+
+    private sealed class InlinePolicy(int permitLimit) : IRateLimiterPolicy<string>
+    {
+        public Func<OnRejectedContext, CancellationToken, ValueTask>? OnRejected => null;
+
+        public RateLimitPartition<string> GetPartition(HttpContext context)
+        {
+            var client = context.Request.Query["client"].ToString();
+            return RateLimitPartition.GetFixedWindowLimiter(
+                string.IsNullOrEmpty(client) ? "anonymous" : client,
+                _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = permitLimit,
+                    QueueLimit = 0,
+                    Window = TimeSpan.FromMinutes(10),
+                    AutoReplenishment = false
+                });
+        }
     }
 
     private sealed class CountingHandler : HttpMessageHandler

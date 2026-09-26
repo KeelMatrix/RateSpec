@@ -5,6 +5,8 @@ namespace KeelMatrix.RateSpec;
 /// <summary>Executes bounded, sequential HTTP behavior checks against a caller-owned test host.</summary>
 public sealed class RateVerifier
 {
+    private readonly Action _activationTracker;
+
     /// <summary>The default per-contract request ceiling.</summary>
     public const int DefaultMaximumRequestCount = 100;
 
@@ -14,6 +16,11 @@ public sealed class RateVerifier
     /// <summary>Creates a verifier with a bounded request ceiling.</summary>
     /// <param name="maximumRequestCount">The maximum number of requests one contract may issue.</param>
     public RateVerifier(int maximumRequestCount = DefaultMaximumRequestCount)
+        : this(maximumRequestCount, TrackActivation)
+    {
+    }
+
+    internal RateVerifier(int maximumRequestCount, Action activationTracker)
     {
         if (maximumRequestCount <= 0 || maximumRequestCount > HardMaximumRequestCount)
         {
@@ -23,7 +30,9 @@ public sealed class RateVerifier
                 $"The maximum request count must be between 1 and {HardMaximumRequestCount}.");
         }
 
+        ArgumentNullException.ThrowIfNull(activationTracker);
         MaximumRequestCount = maximumRequestCount;
+        _activationTracker = activationTracker;
     }
 
     /// <summary>Gets the maximum number of requests this verifier may issue for one contract.</summary>
@@ -68,7 +77,7 @@ public sealed class RateVerifier
         return VerifyCoreAsync(contract, cancellationToken);
     }
 
-    private static async Task<RateVerificationResult> VerifyCoreAsync(
+    private async Task<RateVerificationResult> VerifyCoreAsync(
         RateContract contract,
         CancellationToken cancellationToken)
     {
@@ -79,12 +88,12 @@ public sealed class RateVerifier
         {
             if (cancellationToken.IsCancellationRequested)
             {
-                return CreateAggregateResult(
+                return CompleteResult(CreateAggregateResult(
                     succeeded: false,
                     requestCount,
                     RateVerificationFailureKind.Cancelled,
                     "Verification was cancelled.",
-                    scenarioResults);
+                    scenarioResults));
             }
 
             var scenarioResult = await RunScenarioAsync(contract.Client, scenario, cancellationToken).ConfigureAwait(false);
@@ -93,28 +102,21 @@ public sealed class RateVerifier
 
             if (!scenarioResult.Succeeded)
             {
-                return CreateAggregateResult(
+                return CompleteResult(CreateAggregateResult(
                     succeeded: false,
                     requestCount,
                     scenarioResult.FailureKind,
                     scenarioResult.Message,
-                    scenarioResults);
+                    scenarioResults));
             }
         }
 
-        var result = CreateAggregateResult(
+        return CompleteResult(CreateAggregateResult(
             succeeded: true,
             requestCount,
             RateVerificationFailureKind.None,
             "The rate contract passed.",
-            scenarioResults);
-
-        if (result.RequestsIssued > 0)
-        {
-            TryTrackActivation();
-        }
-
-        return result;
+            scenarioResults));
     }
 
     private static async Task<RateScenarioResult> RunScenarioAsync(
@@ -227,7 +229,7 @@ public sealed class RateVerifier
         var evaluation = await EvaluateRequestAsync(
             client,
             scenario.SecondRequestFactory!,
-            requestNumber: observations.Count,
+            requestNumber: 0,
             expectation: scenario.Expectation,
             expectRejection: true,
             cancellationToken).ConfigureAwait(false);
@@ -330,10 +332,12 @@ public sealed class RateVerifier
         CancellationToken cancellationToken)
     {
         HttpRequestMessage? request = null;
+        var requestWasIssued = false;
         try
         {
             cancellationToken.ThrowIfCancellationRequested();
             request = requestFactory(requestNumber) ?? throw new InvalidOperationException();
+            requestWasIssued = true;
 
             using var response = await client.SendAsync(
                 request,
@@ -354,7 +358,8 @@ public sealed class RateVerifier
                     requestNumber,
                     statusCode,
                     RateVerificationFailureKind.HostFailure,
-                    "A response predicate failed without a usable verdict.");
+                    "A response predicate failed without a usable verdict.",
+                    requestWasIssued);
             }
 
             if (!predicateMatched)
@@ -362,7 +367,7 @@ public sealed class RateVerifier
                 var failure = expectRejection
                     ? response.IsSuccessStatusCode ? RateVerificationFailureKind.MissingRejection : RateVerificationFailureKind.StatusMismatch
                     : response.IsSuccessStatusCode ? RateVerificationFailureKind.StatusMismatch : RateVerificationFailureKind.EarlyRejection;
-                return RequestEvaluation.Failure(requestNumber, statusCode, failure, GetMessage(failure));
+                return RequestEvaluation.Failure(requestNumber, statusCode, failure, GetMessage(failure), requestWasIssued);
             }
 
             if (expectRejection)
@@ -373,7 +378,8 @@ public sealed class RateVerifier
                         requestNumber,
                         statusCode,
                         RateVerificationFailureKind.StatusMismatch,
-                        "The rejection status did not match the expectation.");
+                        "The rejection status did not match the expectation.",
+                        requestWasIssued);
                 }
 
                 foreach (var header in expectation.RejectedHeaderPredicates)
@@ -390,7 +396,8 @@ public sealed class RateVerifier
                             requestNumber,
                             statusCode,
                             RateVerificationFailureKind.HostFailure,
-                            "A response-header predicate failed without a usable verdict.");
+                            "A response-header predicate failed without a usable verdict.",
+                            requestWasIssued);
                     }
 
                     if (!headerMatched)
@@ -399,12 +406,13 @@ public sealed class RateVerifier
                             requestNumber,
                             statusCode,
                             RateVerificationFailureKind.HeaderMismatch,
-                            "A rejection response-header predicate did not match.");
+                            "A rejection response-header predicate did not match.",
+                            requestWasIssued);
                     }
                 }
             }
 
-            return RequestEvaluation.Success(requestNumber, statusCode);
+            return RequestEvaluation.Success(requestNumber, statusCode, requestWasIssued);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
@@ -412,7 +420,8 @@ public sealed class RateVerifier
                 requestNumber,
                 statusCode: null,
                 RateVerificationFailureKind.Cancelled,
-                "Verification was cancelled.");
+                "Verification was cancelled.",
+                requestWasIssued);
         }
         catch
         {
@@ -420,7 +429,8 @@ public sealed class RateVerifier
                 requestNumber,
                 statusCode: null,
                 RateVerificationFailureKind.HostFailure,
-                "The request factory or HTTP host failed.");
+                "The request factory or HTTP host failed.",
+                requestWasIssued);
         }
         finally
         {
@@ -440,17 +450,29 @@ public sealed class RateVerifier
             : null;
     }
 
-    private static void TryTrackActivation()
+    private RateVerificationResult CompleteResult(RateVerificationResult result)
+    {
+        if (result.Scenarios.Any(static scenario => scenario.Observations.Any(static observation => observation.RequestWasIssued)))
+        {
+            TryTrackActivation();
+        }
+
+        return result;
+    }
+
+    private void TryTrackActivation()
     {
         try
         {
-            new Client("RateSpec", typeof(RateVerifier)).TrackActivation();
+            _activationTracker();
         }
         catch
         {
             // Telemetry is best effort and must never alter a verification verdict.
         }
     }
+
+    private static void TrackActivation() => new Client("RateSpec", typeof(RateVerifier)).TrackActivation();
 
     private static string GetMessage(RateVerificationFailureKind failureKind) => failureKind switch
     {
@@ -517,8 +539,8 @@ public sealed class RateVerifier
 
         internal string Message { get; }
 
-        internal static RequestEvaluation Success(int requestNumber, int statusCode) => new(
-            new RateResponseObservation(requestNumber, statusCode, predicateMatched: true),
+        internal static RequestEvaluation Success(int requestNumber, int statusCode, bool requestWasIssued) => new(
+            new RateResponseObservation(requestNumber, statusCode, predicateMatched: true, requestWasIssued),
             failureKind: null,
             "");
 
@@ -526,8 +548,9 @@ public sealed class RateVerifier
             int requestNumber,
             int? statusCode,
             RateVerificationFailureKind failureKind,
-            string message) => new(
-            new RateResponseObservation(requestNumber, statusCode, predicateMatched: false),
+            string message,
+            bool requestWasIssued) => new(
+            new RateResponseObservation(requestNumber, statusCode, predicateMatched: false, requestWasIssued),
             failureKind,
             message);
     }

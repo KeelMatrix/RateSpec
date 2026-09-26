@@ -40,14 +40,15 @@ public enum RateVerificationFailureKind
 /// <summary>Records one request outcome without retaining response content.</summary>
 public sealed class RateResponseObservation
 {
-    internal RateResponseObservation(int requestNumber, int? statusCode, bool predicateMatched)
+    internal RateResponseObservation(int requestNumber, int? statusCode, bool predicateMatched, bool requestWasIssued)
     {
         RequestNumber = requestNumber;
         StatusCode = statusCode;
         PredicateMatched = predicateMatched;
+        RequestWasIssued = requestWasIssued;
     }
 
-    /// <summary>Gets the zero-based request number within the scenario.</summary>
+    /// <summary>Gets the zero-based request number within the request factory sequence.</summary>
     public int RequestNumber { get; }
 
     /// <summary>Gets the observed status code, when a response was received.</summary>
@@ -55,6 +56,8 @@ public sealed class RateResponseObservation
 
     /// <summary>Gets a value indicating whether the expected response contract matched.</summary>
     public bool PredicateMatched { get; }
+
+    internal bool RequestWasIssued { get; }
 }
 
 /// <summary>Contains the verdict for one scenario.</summary>
@@ -122,4 +125,3 @@ public sealed class RateVerificationResult
     /// <summary>Gets the results for scenarios reached before the verdict.</summary>
     public IReadOnlyList<RateScenarioResult> Scenarios { get; }
 }
-
