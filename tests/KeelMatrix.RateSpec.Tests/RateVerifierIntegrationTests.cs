@@ -407,6 +407,76 @@ public sealed class RateVerifierIntegrationTests
         Assert.Equal(0, activationCalls);
     }
 
+    [Theory]
+    [InlineData("initial", 1)]
+    [InlineData("unlimited", 1)]
+    [InlineData("partition", 2)]
+    [InlineData("shared", 2)]
+    public async Task Factory_failures_count_only_requests_handed_to_http_client(string scenarioKind, int expectedRequestsIssued)
+    {
+        var factoryCalls = 0;
+        var handler = new StatusHandler(callNumber => callNumber == 0 ? HttpStatusCode.OK : HttpStatusCode.TooManyRequests);
+        using var client = new HttpClient(handler);
+
+        var scenario = scenarioKind switch
+        {
+            "initial" => RateScenario.InitialBurst(
+                _ =>
+                {
+                    factoryCalls++;
+                    if (factoryCalls == 2)
+                    {
+                        throw new InvalidOperationException();
+                    }
+
+                    return new HttpRequestMessage(HttpMethod.Get, "http://local.test/");
+                },
+                RateExpectation.Burst(1)),
+            "unlimited" => RateScenario.Unlimited(
+                _ =>
+                {
+                    factoryCalls++;
+                    return factoryCalls == 1
+                        ? new HttpRequestMessage(HttpMethod.Get, "http://local.test/")
+                        : null!;
+                },
+                RateExpectation.Unlimited(2)),
+            "partition" => RateScenario.PartitionIsolation(
+                _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                _ => null!,
+                RateExpectation.Burst(1)),
+            "shared" => RateScenario.SharedPartition(
+                _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                _ => null!,
+                RateExpectation.Burst(1)),
+            _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+        };
+
+        var result = await VerifyAsync(client, scenario);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(expectedRequestsIssued, result.RequestsIssued);
+        Assert.Equal(expectedRequestsIssued, result.Scenarios.Single().RequestsIssued);
+        Assert.Equal(expectedRequestsIssued, handler.Calls);
+    }
+
+    [Fact]
+    public async Task Factory_failure_before_first_request_reports_zero_issued_requests()
+    {
+        using var client = new HttpClient(new StatusHandler(_ => HttpStatusCode.OK));
+
+        var result = await VerifyAsync(
+            client,
+            RateScenario.InitialBurst(
+                _ => throw new InvalidOperationException(),
+                RateExpectation.Burst(1)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.HostFailure, result.FailureKind);
+        Assert.Equal(0, result.RequestsIssued);
+        Assert.Equal(0, result.Scenarios.Single().RequestsIssued);
+    }
+
     [Fact]
     public async Task Failure_diagnostics_do_not_echo_factory_exception_details()
     {
@@ -428,6 +498,42 @@ public sealed class RateVerifierIntegrationTests
     {
         Assert.Throws<ArgumentException>(() => RateExpectation.BurstWithSuccessStatusRange(1, 200, 299, 204));
         Assert.Throws<ArgumentException>(() => RateExpectation.BurstWithSuccessStatusRange(1, 400, 200));
+    }
+
+    [Theory]
+    [InlineData(100, 199, 200)]
+    [InlineData(100, 199, 299)]
+    [InlineData(300, 599, 200)]
+    [InlineData(300, 599, 299)]
+    public void Status_range_rejects_success_status_at_the_factory_boundary(
+        int minimumStatusCode,
+        int maximumStatusCode,
+        int rejectionStatusCode)
+    {
+        Assert.Throws<ArgumentException>(() => RateExpectation.BurstWithSuccessStatusRange(
+            1,
+            minimumStatusCode,
+            maximumStatusCode,
+            rejectionStatusCode));
+    }
+
+    [Theory]
+    [InlineData(100, 199, 300)]
+    [InlineData(200, 299, 100)]
+    [InlineData(200, 299, 599)]
+    [InlineData(300, 599, 199)]
+    public void Status_range_accepts_valid_non_success_rejection_boundaries(
+        int minimumStatusCode,
+        int maximumStatusCode,
+        int rejectionStatusCode)
+    {
+        var expectation = RateExpectation.BurstWithSuccessStatusRange(
+            1,
+            minimumStatusCode,
+            maximumStatusCode,
+            rejectionStatusCode);
+
+        Assert.Equal(rejectionStatusCode, expectation.RejectionStatusCode);
     }
 
     [Fact]
@@ -481,6 +587,21 @@ public sealed class RateVerifierIntegrationTests
         {
             _onSend();
             return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK));
+        }
+    }
+
+    private sealed class StatusHandler : HttpMessageHandler
+    {
+        private readonly Func<int, HttpStatusCode> _statusFactory;
+
+        internal StatusHandler(Func<int, HttpStatusCode> statusFactory) => _statusFactory = statusFactory;
+
+        internal int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            var status = _statusFactory(Calls++);
+            return Task.FromResult(new HttpResponseMessage(status));
         }
     }
 

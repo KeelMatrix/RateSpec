@@ -56,6 +56,36 @@ if ($releaseSection -match '(?i)\bplanned\b|\bunreleased\b|\btbd\b|not yet publi
     throw "CHANGELOG.md [$version] section is not finalized."
 }
 
+if ($version -eq '0.1.0') {
+    $categories = @(
+        [regex]::Matches($releaseSection, '(?m)^###\s+(?<category>[^\r\n]+)\s*$') |
+            ForEach-Object { $_.Groups['category'].Value.Trim() }
+    )
+    if ($categories.Count -ne 1 -or $categories[0] -cne 'Added') {
+        throw 'The first public release section must contain only an Added category.'
+    }
+
+    $remediationMarkers = @(
+        'now',
+        'no longer',
+        'previously',
+        'formerly',
+        'used to',
+        'fixed',
+        'fixes',
+        'corrected',
+        'resolved',
+        'addressed',
+        'this removes',
+        'this fixes',
+        'changed from'
+    )
+    $markerPattern = '(?i)\b(?:' + (($remediationMarkers | ForEach-Object { [regex]::Escape($_) }) -join '|') + ')\b'
+    if ($releaseSection -match $markerPattern) {
+        throw 'The first public release section contains unpublished remediation or transition wording.'
+    }
+}
+
 try {
     $releaseDate = [DateTime]::ParseExact($heading.Groups['date'].Value, 'yyyy-MM-dd', [Globalization.CultureInfo]::InvariantCulture)
 }

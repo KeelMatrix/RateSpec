@@ -506,7 +506,7 @@ public sealed class RateVerifier
 
     private static RateScenarioResult CreateScenarioSuccess(List<RateResponseObservation> observations) => new(
         succeeded: true,
-        observations.Count,
+        CountIssuedRequests(observations),
         RateVerificationFailureKind.None,
         "The scenario passed.",
         observations.ToArray());
@@ -516,10 +516,13 @@ public sealed class RateVerifier
         RateVerificationFailureKind failureKind,
         string message) => new(
         succeeded: false,
-        observations.Count,
+        CountIssuedRequests(observations),
         failureKind,
         message,
         observations.ToArray());
+
+    private static int CountIssuedRequests(IEnumerable<RateResponseObservation> observations) =>
+        observations.Count(static observation => observation.RequestWasIssued);
 
     private sealed class RequestEvaluation
     {

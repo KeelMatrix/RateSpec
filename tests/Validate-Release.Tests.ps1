@@ -93,6 +93,74 @@ Future changes go here.
 '@
     Assert-ValidatorPasses -Fixture $finalized -Name 'Finalized changelog'
 
+    $unreleasedMarker = New-ValidatorFixture
+    Set-FixtureChangelog -Fixture $unreleasedMarker -Content @'
+# Changelog
+
+## [Unreleased]
+
+- Fixed an unreleased draft detail.
+
+## [0.1.0] - 2026-01-01
+
+### Added
+
+- Initial release.
+'@
+    Assert-ValidatorPasses -Fixture $unreleasedMarker -Name 'Unreleased section isolation'
+
+    $firstReleaseCategories = @('Changed', 'Fixed', 'Deprecated', 'Removed', 'Security', 'Compatibility')
+    foreach ($category in $firstReleaseCategories) {
+        $categoryFixture = New-ValidatorFixture
+        Set-FixtureChangelog -Fixture $categoryFixture -Content @"
+# Changelog
+
+## [Unreleased]
+
+## [0.1.0] - 2026-01-01
+
+### Added
+
+- Initial release.
+
+### $category
+
+- Additional release detail.
+"@
+        Assert-ValidatorRejects -Fixture $categoryFixture -ExpectedMessage 'must contain only an Added category' -Name "First-release $category category"
+    }
+
+    $remediationMarkers = @(
+        'now',
+        'no longer',
+        'previously',
+        'formerly',
+        'used to',
+        'fixed',
+        'fixes',
+        'corrected',
+        'resolved',
+        'addressed',
+        'this removes',
+        'this fixes',
+        'changed from'
+    )
+    foreach ($marker in $remediationMarkers) {
+        $markerFixture = New-ValidatorFixture
+        Set-FixtureChangelog -Fixture $markerFixture -Content @"
+# Changelog
+
+## [Unreleased]
+
+## [0.1.0] - 2026-01-01
+
+### Added
+
+- The package $marker this pre-release behavior.
+"@
+        Assert-ValidatorRejects -Fixture $markerFixture -ExpectedMessage 'unpublished remediation or transition wording' -Name "First-release marker '$marker'"
+    }
+
     $mismatch = New-ValidatorFixture
     Set-FixtureChangelog -Fixture $mismatch -Content @'
 # Changelog

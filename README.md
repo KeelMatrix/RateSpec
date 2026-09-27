@@ -21,7 +21,7 @@ var result = await new RateVerifier().VerifyAsync(contract, cancellationToken);
 Assert.True(result.Succeeded, result.Message);
 ```
 
-The request factory belongs to the application, so it can provide the headers or route data used by its partition policy. Verification is sequential by default, bounded, cancellable, and never retries automatically. A verdict after at least one request, including a failed verdict or cancellation after a request, makes one best-effort coarse activation call; preflight or no-request verdicts do not. Telemetry failure never changes the result.
+The request factory belongs to the application, so it can provide the headers or route data used by its partition policy. Verification is sequential by default, bounded, cancellable, and never retries automatically. `RequestsIssued` counts only request messages returned by a factory and handed to `HttpClient`; factory failures before request creation are not counted. A verdict after at least one request, including a failed verdict or cancellation after a request, makes one best-effort coarse activation call; preflight or no-request verdicts do not. Telemetry failure never changes the result.
 
 ## Documentation
 
@@ -31,8 +31,9 @@ RateSpec is designed for in-memory or test-host integration tests. Production ba
 
 ## Supported Frameworks and Platforms
 
-The package targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. The repository's
-Release CI validates the package and tests on Windows, Linux, and macOS runners. Earlier .NET versions are not supported.
+The package targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. Release CI validates
+the library tests and formatting on Windows, Linux, and macOS; the package archive and isolated package-consumer gate
+runs on Ubuntu. Earlier .NET versions are not supported.
 
 ## License
 

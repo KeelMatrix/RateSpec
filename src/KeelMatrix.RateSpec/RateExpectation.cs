@@ -81,7 +81,7 @@ public sealed class RateExpectation
     /// <param name="acceptedRequestCount">The number of requests expected to be accepted before rejection.</param>
     /// <param name="minimumStatusCode">The inclusive lower bound of the accepted status-code range.</param>
     /// <param name="maximumStatusCode">The inclusive upper bound of the accepted status-code range.</param>
-    /// <param name="rejectionStatusCode">Optional exact status code for the rejection response.</param>
+    /// <param name="rejectionStatusCode">Optional exact status code for the rejection response. The range helper uses the default non-2xx rejection predicate, so this must be outside both the accepted range and 200-299.</param>
     /// <param name="rejectedHeaderPredicates">Optional rejection-header predicates keyed by header name.</param>
     /// <returns>A validated burst expectation.</returns>
     public static RateExpectation BurstWithSuccessStatusRange(
@@ -101,6 +101,13 @@ public sealed class RateExpectation
         if (rejectionStatusCode is not null && rejectionStatusCode >= minimumStatusCode && rejectionStatusCode <= maximumStatusCode)
         {
             throw new ArgumentException("The rejection status code cannot be inside the accepted status-code range.", nameof(rejectionStatusCode));
+        }
+
+        if (rejectionStatusCode is >= 200 and <= 299)
+        {
+            throw new ArgumentException(
+                "The rejection status code cannot be a success status when the default rejection predicate is used.",
+                nameof(rejectionStatusCode));
         }
 
         return Burst(

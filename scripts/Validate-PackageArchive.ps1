@@ -106,6 +106,25 @@ try {
         }
     }
 
+    $allowedEntryPatterns = @(
+        '^_rels/\.rels$',
+        '^KeelMatrix\.RateSpec\.nuspec$',
+        '^lib/net8\.0/KeelMatrix\.RateSpec\.dll$',
+        '^lib/net8\.0/KeelMatrix\.RateSpec\.xml$',
+        '^README\.md$',
+        '^LICENSE$',
+        '^\[Content_Types\]\.xml$',
+        '^package/services/metadata/core-properties/[0-9a-f]{32}\.psmdcp$',
+        '^icon\.png$'
+    )
+    $unexpectedEntries = @($entryNames | Where-Object {
+        $entryName = $_
+        -not ($allowedEntryPatterns | Where-Object { $entryName -match $_ })
+    })
+    if ($unexpectedEntries.Count -gt 0) {
+        throw "Package contains unexpected entry(s): $($unexpectedEntries -join ', ')."
+    }
+
     $sensitiveEntry = $entryNames | Where-Object { $_ -match '(?i)(^|/)(\.env(?:\.|$)|.*\.pfx$|.*\.snk$|keelmatrix\.telemetry\.json$|AGENTS\.md$|\.github/|bin/|obj/)' }
     if ($null -ne $sensitiveEntry) {
         throw "Package contains forbidden entry(s): $($sensitiveEntry -join ', ')."
@@ -184,6 +203,21 @@ try {
     $symbolNames = @($symbols.Entries | ForEach-Object FullName)
     if ($symbolNames -notcontains 'lib/net8.0/KeelMatrix.RateSpec.pdb') {
         throw 'Symbol package is missing lib/net8.0/KeelMatrix.RateSpec.pdb.'
+    }
+
+    $allowedSymbolPatterns = @(
+        '^_rels/\.rels$',
+        '^KeelMatrix\.RateSpec\.nuspec$',
+        '^lib/net8\.0/KeelMatrix\.RateSpec\.pdb$',
+        '^\[Content_Types\]\.xml$',
+        '^package/services/metadata/core-properties/[0-9a-f]{32}\.psmdcp$'
+    )
+    $unexpectedSymbolEntries = @($symbolNames | Where-Object {
+        $entryName = $_
+        -not ($allowedSymbolPatterns | Where-Object { $entryName -match $_ })
+    })
+    if ($unexpectedSymbolEntries.Count -gt 0) {
+        throw "Symbol package contains unexpected entry(s): $($unexpectedSymbolEntries -join ', ')."
     }
 }
 finally {

@@ -73,6 +73,10 @@ jobs:
         shell: pwsh
         run: pwsh ./tests/Validate-Release.Tests.ps1
 
+      - name: Test package restore identity validator
+        shell: pwsh
+        run: pwsh ./tests/Validate-PackageRestore.Tests.ps1
+
       - name: Test vulnerability audit parser
         shell: pwsh
         run: pwsh ./tests/Validate-VulnerabilityAudit.Tests.ps1
@@ -122,6 +126,7 @@ jobs:
           }
 
           & pwsh ./scripts/Validate-PackageArchive.ps1 -PackagePath $packages[0].FullName -SymbolPackagePath $symbols[0].FullName -AllowMissingIcon
+          & pwsh ./tests/Validate-PackageArchive.Tests.ps1 -PackagePath $packages[0].FullName -SymbolPackagePath $symbols[0].FullName
 
       - name: Audit package dependencies
         shell: pwsh
@@ -159,7 +164,23 @@ jobs:
           dotnet restore
           smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj
           --configfile smoke/NuGet.config
-          --packages "${{ runner.temp }}/smoke-packages"
+          --packages "${{ runner.temp }}/ratespec-smoke-packages-${{ github.run_id }}-${{ github.run_attempt }}"
+          --no-cache
+          --force
+
+      - name: Verify package consumer resolved the produced archive
+        shell: pwsh
+        run: |
+          $packages = @(Get-ChildItem -LiteralPath artifacts/package -File | Where-Object { $_.Name -match '^KeelMatrix\.RateSpec\..+\.nupkg$' -and $_.Name -notmatch '\.snupkg$' })
+          if ($packages.Count -ne 1) {
+              throw "Expected exactly one produced package; found $($packages.Count)."
+          }
+          & pwsh ./scripts/Validate-PackageRestore.ps1 `
+              -PackagePath $packages[0].FullName `
+              -AssetsFile smoke/RateSpec.ConsumerSmoke/obj/project.assets.json
+          if ($LASTEXITCODE -ne 0) {
+              throw "The package restore identity validator failed with exit code $LASTEXITCODE."
+          }
 
       - name: Build package consumer
         shell: pwsh

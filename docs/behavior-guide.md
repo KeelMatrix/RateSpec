@@ -20,14 +20,15 @@ var scenario = RateScenario.InitialBurst(
 var result = await new RateVerifier().VerifyAsync(new RateContract(client, scenario));
 ```
 
-RateSpec targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. The package and tests
-are validated in repository CI on Windows, Linux, and macOS. Earlier .NET versions are not supported.
+RateSpec targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. Release CI validates
+the library tests and formatting on Windows, Linux, and macOS; the package archive and isolated package-consumer gate
+runs on Ubuntu. Earlier .NET versions are not supported.
 
-The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. With those defaults, a declared `rejectionStatusCode` must be outside 200-299; a 2xx rejection status contradicts the two default predicates and is rejected while the expectation is created. When either predicate is custom, the caller must ensure that the declared rejection status does not satisfy the accepted predicate and does satisfy the rejected predicate. Use `BurstWithSuccessStatusRange` or custom predicates when the endpoint has a more specific contract.
+The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. With those defaults, a declared `rejectionStatusCode` must be outside 200-299; a 2xx rejection status contradicts the two default predicates and is rejected while the expectation is created. When either predicate is custom, the caller must ensure that the declared rejection status does not satisfy the accepted predicate and does satisfy the rejected predicate. `BurstWithSuccessStatusRange` uses the default non-2xx rejection predicate, so it also rejects every exact 2xx rejection code during construction, even when the accepted range itself is outside 200-299.
 
 ## Initial burst and rejection
 
-`RateExpectation.Burst(n)` issues exactly `n` accepted-response checks followed by one rejection check. The verifier sends them sequentially and never retries. A request factory receives only its zero-based request number and is responsible for creating a fresh request message. Each factory sequence starts at zero; the second factory in a partition scenario also receives zero for its first request.
+`RateExpectation.Burst(n)` issues exactly `n` accepted-response checks followed by one rejection check. The verifier sends them sequentially and never retries. A request factory receives only its zero-based request number and is responsible for creating a fresh request message. Each factory sequence starts at zero; the second factory in a partition scenario also receives zero for its first request. `RequestsIssued` counts only request messages returned by a factory and handed to `HttpClient`; a factory throw, null result, or cancellation before a request is created does not inflate the count.
 
 ## Partition A/B isolation
 
