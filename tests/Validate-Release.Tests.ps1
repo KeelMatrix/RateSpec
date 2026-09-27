@@ -115,10 +115,12 @@ Future changes go here.
 '@
     Assert-ValidatorPasses -Fixture $unreleasedMarker -Name 'Unreleased section isolation'
 
-    $firstReleaseCategories = @('Changed', 'Fixed', 'Deprecated', 'Removed', 'Security', 'Compatibility')
-    foreach ($category in $firstReleaseCategories) {
-        $categoryFixture = New-ValidatorFixture
-        Set-FixtureChangelog -Fixture $categoryFixture -Content @"
+    $firstReleaseCategoryNames = @('Changed', 'Fixed', 'Deprecated', 'Removed', 'Security', 'Compatibility', 'Notes')
+    $firstReleaseHeadingDepths = @('#', '##', '###', '####', '#####', '######', '#######')
+    foreach ($depth in $firstReleaseHeadingDepths) {
+        foreach ($category in $firstReleaseCategoryNames) {
+            $categoryFixture = New-ValidatorFixture
+            Set-FixtureChangelog -Fixture $categoryFixture -Content @"
 # Changelog
 
 ## [Unreleased]
@@ -129,12 +131,51 @@ Future changes go here.
 
 - Initial release.
 
-### $category
+$depth $category
 
 - Additional release detail.
 "@
-        Assert-ValidatorRejects -Fixture $categoryFixture -ExpectedMessage 'must contain only an Added category' -Name "First-release $category category"
+            Assert-ValidatorRejects -Fixture $categoryFixture -ExpectedMessage 'must contain only an Added category' -Name "First-release $depth $category category"
+        }
     }
+
+    $nestedCategory = New-ValidatorFixture
+    Set-FixtureChangelog -Fixture $nestedCategory -Content @'
+# Changelog
+
+## [Unreleased]
+
+## [0.1.0] - 2026-01-01
+
+### Added
+
+- Initial release.
+
+#### Changed
+
+- Additional release detail.
+'@
+    Assert-ValidatorRejects -Fixture $nestedCategory -ExpectedMessage 'must contain only an Added category' -Name 'Nested first-release category'
+
+    $futureRelease = New-ValidatorFixture
+    Set-FixtureChangelog -Fixture $futureRelease -Content @'
+# Changelog
+
+## [Unreleased]
+
+## [0.1.0] - 2026-01-01
+
+### Added
+
+- Initial release.
+
+## [0.2.0] - 2026-02-01
+
+### Changed
+
+- Future release detail.
+'@
+    Assert-ValidatorPasses -Fixture $futureRelease -Name 'Release section isolation'
 
     $remediationMarkers = @(
         'now',

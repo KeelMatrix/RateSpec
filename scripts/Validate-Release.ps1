@@ -44,7 +44,11 @@ if (-not $heading.Success) {
 }
 
 $releaseSectionStart = $heading.Index + $heading.Length
-$nextHeading = [regex]::Match($changelog.Substring($releaseSectionStart), '(?m)^##\s+')
+$releaseSectionHeadingPattern = '(?:Unreleased|(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*))'
+$nextHeading = [regex]::Match(
+    $changelog.Substring($releaseSectionStart),
+    "(?m)^##[ \t]+\[$releaseSectionHeadingPattern\](?:[ \t]+-[^\r\n]*)?[ \t]*$"
+)
 $releaseSection = if ($nextHeading.Success) {
     $changelog.Substring($releaseSectionStart, $nextHeading.Index)
 }
@@ -57,8 +61,10 @@ if ($releaseSection -match '(?i)\bplanned\b|\bunreleased\b|\btbd\b|not yet publi
 }
 
 if ($version -eq '0.1.0') {
+    # Every Markdown heading in the selected release section is a category.
+    # Matching the hash run keeps this rule independent of heading depth.
     $categories = @(
-        [regex]::Matches($releaseSection, '(?m)^###\s+(?<category>[^\r\n]+)\s*$') |
+        [regex]::Matches($releaseSection, '(?m)^#{1,}[ \t]+(?<category>[^\r\n]+)[ \t]*$') |
             ForEach-Object { $_.Groups['category'].Value.Trim() }
     )
     if ($categories.Count -ne 1 -or $categories[0] -cne 'Added') {
