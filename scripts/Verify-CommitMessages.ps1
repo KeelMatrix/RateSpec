@@ -7,7 +7,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 
-$policyVersion = 1
+$policyVersion = 2
 
 function Join-CodePoints {
     param([int[]]$Values)
@@ -56,8 +56,7 @@ function Get-MessageRecords {
 function Test-Message {
     param([string]$Message)
 
-    $trailerName = Join-CodePoints @(67, 111, 45, 65, 117, 116, 104, 111, 114, 101, 100, 45, 66, 121)
-    $trailerPattern = '(?im)^\s*' + [regex]::Escape($trailerName) + '\s*:'
+    $trailerPattern = '(?im)^\s*[a-z0-9][a-z0-9-]*-by\s*:'
     return [regex]::IsMatch($Message, $trailerPattern) -or [regex]::IsMatch($Message, (Get-ForbiddenPattern))
 }
 
@@ -69,15 +68,28 @@ if ($SelfTest) {
         & git -C $selfTestRoot config user.name 'KeelMatrix'
         & git -C $selfTestRoot config user.email 'keelmatrix@gmail.com'
         [IO.File]::WriteAllText((Join-Path $selfTestRoot 'history.txt'), 'fixture')
-        [IO.File]::WriteAllText(
-            (Join-Path $selfTestRoot 'message.txt'),
-            "fixture commit`n`n$((Join-CodePoints @(67, 111, 45, 65, 117, 116, 104, 111, 114, 101, 100, 45, 66, 121))): Example <example@example.invalid>`n")
-        & git -C $selfTestRoot add history.txt message.txt
-        & git -C $selfTestRoot commit --quiet --file message.txt
+        $trailerNames = @(
+            'CO-AUTHORED-BY',
+            'signed-OFF-by',
+            'Reviewed-BY',
+            'ACKED-BY',
+            'Tested-by',
+            'REPORTED-BY',
+            'Suggested-BY',
+            'Custom-BY'
+        )
+        foreach ($trailerName in $trailerNames) {
+            [IO.File]::WriteAllText(
+                (Join-Path $selfTestRoot 'message.txt'),
+                "fixture commit ${trailerName}`n`n   ${trailerName}: Example <example@example.invalid>`n")
+            & git -C $selfTestRoot add history.txt message.txt
+            & git -C $selfTestRoot commit --quiet --file message.txt
+        }
 
         $selfTestOutput = @(& pwsh -NoProfile -File $PSCommandPath -RepositoryPath $selfTestRoot 2>&1)
         $selfTestExit = $LASTEXITCODE
-        if ($selfTestExit -eq 0 -or ($selfTestOutput -join "`n") -notmatch 'COMMIT_MESSAGE_VIOLATION=') {
+        $violationCount = @($selfTestOutput | Where-Object { $_ -match '^COMMIT_MESSAGE_VIOLATION=' }).Count
+        if ($selfTestExit -eq 0 -or $violationCount -ne $trailerNames.Count) {
             throw 'Commit-message policy self-test failed to detect the fixture violation.'
         }
 

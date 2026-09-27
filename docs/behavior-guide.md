@@ -71,7 +71,7 @@ The default verifier ceiling is 100 requests per contract and the hard maximum i
 
 ## Cancellation
 
-Pass a `CancellationToken` to `VerifyAsync`. It is checked before each request and passed to `HttpClient.SendAsync`. Cancellation returns a `Cancelled` verdict and does not trigger a retry.
+Pass a `CancellationToken` to `VerifyAsync`. The caller token is checked before each request and after each HTTP response and response predicate. If it is cancelled during verification, the public result is always `Cancelled`, including when a valid terminal response was already received; no retry is triggered. A request factory that directly throws `OperationCanceledException` also remains a `Cancelled` result. By contrast, an HTTP timeout or other `OperationCanceledException` from `HttpClient` whose token was not cancelled is a `HostFailure`, because `Cancelled` documents caller cancellation rather than host failure.
 
 ## Behavioral contract tests are not load tests
 

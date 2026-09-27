@@ -408,6 +408,128 @@ public sealed class RateVerifierIntegrationTests
     }
 
     [Theory]
+    [InlineData("initial", "accepted", "before")]
+    [InlineData("initial", "accepted", "at")]
+    [InlineData("initial", "accepted", "after")]
+    [InlineData("initial", "rejected", "before")]
+    [InlineData("initial", "rejected", "at")]
+    [InlineData("initial", "rejected", "after")]
+    [InlineData("unlimited", "accepted", "before")]
+    [InlineData("unlimited", "accepted", "at")]
+    [InlineData("unlimited", "accepted", "after")]
+    [InlineData("unlimited", "rejected", "before")]
+    [InlineData("unlimited", "rejected", "at")]
+    [InlineData("unlimited", "rejected", "after")]
+    [InlineData("partition", "accepted", "before")]
+    [InlineData("partition", "accepted", "at")]
+    [InlineData("partition", "accepted", "after")]
+    [InlineData("partition", "rejected", "before")]
+    [InlineData("partition", "rejected", "at")]
+    [InlineData("partition", "rejected", "after")]
+    [InlineData("shared", "accepted", "before")]
+    [InlineData("shared", "accepted", "at")]
+    [InlineData("shared", "accepted", "after")]
+    [InlineData("shared", "rejected", "before")]
+    [InlineData("shared", "rejected", "at")]
+    [InlineData("shared", "rejected", "after")]
+    public async Task Caller_cancellation_before_at_or_after_terminal_response_never_passes(
+        string scenarioKind,
+        string responseKind,
+        string cancellationTiming)
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var responseIsRejected = responseKind == "rejected";
+        var terminalCall = GetTerminalCall(scenarioKind, responseIsRejected);
+        var handler = new StatusHandler(
+            callNumber => GetTerminalScenarioStatus(scenarioKind, responseIsRejected, callNumber),
+            callNumber =>
+            {
+                if (cancellationTiming == "at" && callNumber == terminalCall)
+                {
+                    cancellationSource.Cancel();
+                }
+            });
+        using var client = new HttpClient(handler);
+        var scenario = CreateTerminalCancellationScenario(
+            scenarioKind,
+            responseIsRejected,
+            cancellationSource,
+            cancellationTiming);
+
+        var activationCalls = 0;
+        var result = await new RateVerifier(100, () => activationCalls++)
+            .VerifyAsync(new RateContract(client, scenario), cancellationSource.Token);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.Cancelled, result.FailureKind);
+        Assert.Equal(terminalCall + 1, result.RequestsIssued);
+        Assert.Equal(terminalCall + 1, result.Scenarios.Single().RequestsIssued);
+        Assert.Equal(terminalCall + 1, result.Scenarios.Single().Observations.Count);
+        Assert.All(result.Scenarios.Single().Observations, observation => Assert.NotNull(observation.StatusCode));
+        Assert.Equal(1, activationCalls);
+    }
+
+    [Theory]
+    [InlineData("initial")]
+    [InlineData("unlimited")]
+    [InlineData("partition")]
+    [InlineData("shared")]
+    public async Task Caller_cancellation_before_terminal_request_preserves_prior_observations(string scenarioKind)
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        var terminalCall = GetBeforeTerminalCall(scenarioKind);
+        using var client = new HttpClient(new StatusHandler(
+            callNumber => GetBeforeTerminalScenarioStatus(scenarioKind, callNumber),
+            callNumber =>
+            {
+                if (callNumber == terminalCall - 1)
+                {
+                    cancellationSource.Cancel();
+                }
+            }));
+
+        var result = await new RateVerifier(100, () => { })
+            .VerifyAsync(
+                new RateContract(client, CreateBeforeTerminalCancellationScenario(scenarioKind)),
+                cancellationSource.Token);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.Cancelled, result.FailureKind);
+        Assert.Equal(terminalCall, result.RequestsIssued);
+        Assert.Equal(terminalCall, result.Scenarios.Single().RequestsIssued);
+        Assert.Equal(
+            terminalCall,
+            result.Scenarios.Single().Observations.Count(observation => observation.RequestWasIssued));
+        Assert.All(
+            result.Scenarios.Single().Observations.Where(observation => observation.RequestWasIssued),
+            observation => Assert.NotNull(observation.StatusCode));
+        Assert.Equal(terminalCall, result.Scenarios.Single().Observations.Count);
+    }
+
+    [Theory]
+    [InlineData("initial")]
+    [InlineData("unlimited")]
+    [InlineData("partition")]
+    [InlineData("shared")]
+    public async Task Non_token_http_cancellation_is_host_failure_and_tracks_activation(string scenarioKind)
+    {
+        var handler = new NonTokenCancellationHandler();
+        using var client = new HttpClient(handler);
+        var activationCalls = 0;
+
+        var result = await new RateVerifier(100, () => activationCalls++)
+            .VerifyAsync(new RateContract(client, CreateSingleRequestScenario(scenarioKind)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.HostFailure, result.FailureKind);
+        Assert.Equal(1, result.RequestsIssued);
+        Assert.Equal(1, result.Scenarios.Single().RequestsIssued);
+        Assert.Equal(1, handler.Calls);
+        Assert.Equal(1, activationCalls);
+        Assert.Contains("HTTP host cancelled", result.Message, StringComparison.Ordinal);
+    }
+
+    [Theory]
     [InlineData("initial")]
     [InlineData("unlimited")]
     [InlineData("partition")]
@@ -765,6 +887,137 @@ public sealed class RateVerifierIntegrationTests
         return new HttpRequestMessage(HttpMethod.Get, $"{path}{separator}client={client}");
     }
 
+    private static int GetTerminalCall(string scenarioKind, bool responseIsRejected) => scenarioKind switch
+    {
+        "initial" => responseIsRejected ? 1 : 0,
+        "unlimited" => 0,
+        "partition" => responseIsRejected ? 3 : 2,
+        "shared" => responseIsRejected ? 2 : 0,
+        _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+    };
+
+    private static HttpStatusCode GetTerminalScenarioStatus(string scenarioKind, bool responseIsRejected, int callNumber) =>
+        scenarioKind switch
+        {
+            "initial" => callNumber == 1 ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK,
+            "unlimited" => responseIsRejected ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK,
+            "partition" => callNumber is 1 or 3 ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK,
+            "shared" => callNumber >= 1 ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+        };
+
+    private static int GetBeforeTerminalCall(string scenarioKind) => scenarioKind switch
+    {
+        "initial" => 1,
+        "unlimited" => 1,
+        "partition" => 3,
+        "shared" => 2,
+        _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+    };
+
+    private static HttpStatusCode GetBeforeTerminalScenarioStatus(string scenarioKind, int callNumber) =>
+        scenarioKind switch
+        {
+            "initial" or "unlimited" => HttpStatusCode.OK,
+            "partition" => callNumber is 1 or 3 ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK,
+            "shared" => callNumber >= 1 ? HttpStatusCode.TooManyRequests : HttpStatusCode.OK,
+            _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+        };
+
+    private static RateScenario CreateTerminalCancellationScenario(
+        string scenarioKind,
+        bool responseIsRejected,
+        CancellationTokenSource cancellationSource,
+        string cancellationTiming)
+    {
+        var terminalCall = GetTerminalCall(scenarioKind, responseIsRejected);
+        var requestsCreated = 0;
+        var factory = new RateRequestFactory(_ =>
+        {
+            requestsCreated++;
+            if (cancellationTiming == "before" && requestsCreated == terminalCall + 1)
+            {
+                cancellationSource.Cancel();
+            }
+
+            return new HttpRequestMessage(HttpMethod.Get, "http://local.test/");
+        });
+        Func<HttpResponseMessage, bool> acceptedPredicate = response =>
+        {
+            if (cancellationTiming == "after"
+                && requestsCreated == terminalCall + 1
+                && (!responseIsRejected || scenarioKind == "unlimited"))
+            {
+                cancellationSource.Cancel();
+            }
+
+            return response.IsSuccessStatusCode;
+        };
+        Func<HttpResponseMessage, bool> rejectedPredicate = response =>
+        {
+            if (cancellationTiming == "after" && responseIsRejected && requestsCreated == terminalCall + 1)
+            {
+                cancellationSource.Cancel();
+            }
+
+            return !response.IsSuccessStatusCode;
+        };
+        var expectation = RateExpectation.Burst(
+            1,
+            acceptedPredicate,
+            rejectedPredicate);
+        var unlimitedExpectation = RateExpectation.Unlimited(
+            1,
+            acceptedPredicate);
+
+        return scenarioKind switch
+        {
+            "initial" => RateScenario.InitialBurst(factory, expectation),
+            "unlimited" => RateScenario.Unlimited(factory, unlimitedExpectation),
+            "partition" => RateScenario.PartitionIsolation(factory, factory, expectation),
+            "shared" => RateScenario.SharedPartition(factory, factory, expectation),
+            _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+        };
+    }
+
+    private static RateScenario CreateBeforeTerminalCancellationScenario(string scenarioKind) => scenarioKind switch
+    {
+        "initial" => RateScenario.InitialBurst(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Burst(1)),
+        "unlimited" => RateScenario.Unlimited(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Unlimited(2)),
+        "partition" => RateScenario.PartitionIsolation(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Burst(1)),
+        "shared" => RateScenario.SharedPartition(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Burst(1)),
+        _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+    };
+
+    private static RateScenario CreateSingleRequestScenario(string scenarioKind) => scenarioKind switch
+    {
+        "initial" => RateScenario.InitialBurst(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Burst(1)),
+        "unlimited" => RateScenario.Unlimited(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Unlimited(1)),
+        "partition" => RateScenario.PartitionIsolation(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Burst(1)),
+        "shared" => RateScenario.SharedPartition(
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+            RateExpectation.Burst(1)),
+        _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+    };
+
     private sealed class InlinePolicy(int permitLimit) : IRateLimiterPolicy<string>
     {
         public Func<OnRejectedContext, CancellationToken, ValueTask>? OnRejected => null;
@@ -829,6 +1082,17 @@ public sealed class RateVerifierIntegrationTests
         {
             _onSend();
             return Task.FromCanceled<HttpResponseMessage>(cancellationToken);
+        }
+    }
+
+    private sealed class NonTokenCancellationHandler : HttpMessageHandler
+    {
+        internal int Calls { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Calls++;
+            return Task.FromCanceled<HttpResponseMessage>(new CancellationToken(canceled: true));
         }
     }
 }

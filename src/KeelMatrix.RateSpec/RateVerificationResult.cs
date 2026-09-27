@@ -30,10 +30,10 @@ public enum RateVerificationFailureKind
     /// <summary>The request safety ceiling would have been exceeded.</summary>
     SafetyCeilingExceeded,
 
-    /// <summary>Verification was cancelled by the caller.</summary>
+    /// <summary>The caller cancellation token was cancelled during verification. An operation cancellation thrown directly by a request factory is also classified here; an HTTP cancellation without caller-token cancellation is <see cref="HostFailure"/>.</summary>
     Cancelled,
 
-    /// <summary>The request factory or HTTP host failed without exposing its exception details.</summary>
+    /// <summary>The request factory or HTTP host failed without exposing its exception details, including an HTTP cancellation that did not cancel the caller token.</summary>
     HostFailure
 }
 

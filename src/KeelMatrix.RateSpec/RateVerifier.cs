@@ -40,7 +40,7 @@ public sealed class RateVerifier
 
     /// <summary>Verifies the contract sequentially and returns a content-free structured verdict.</summary>
     /// <param name="contract">The caller-owned client and bounded scenarios.</param>
-    /// <param name="cancellationToken">Cancels verification and the in-flight HTTP operation.</param>
+    /// <param name="cancellationToken">Cancels verification and the in-flight HTTP operation. An HTTP cancellation that does not cancel this token is reported as <see cref="RateVerificationFailureKind.HostFailure"/>.</param>
     /// <returns>The aggregate verification result.</returns>
     public Task<RateVerificationResult> VerifyAsync(
         RateContract contract,
@@ -99,6 +99,16 @@ public sealed class RateVerifier
             var scenarioResult = await RunScenarioAsync(contract.Client, scenario, cancellationToken).ConfigureAwait(false);
             scenarioResults.Add(scenarioResult);
             requestCount += scenarioResult.RequestsIssued;
+
+            if (cancellationToken.IsCancellationRequested)
+            {
+                return CompleteResult(CreateAggregateResult(
+                    succeeded: false,
+                    requestCount,
+                    RateVerificationFailureKind.Cancelled,
+                    "Verification was cancelled.",
+                    scenarioResults));
+            }
 
             if (!scenarioResult.Succeeded)
             {
@@ -160,7 +170,7 @@ public sealed class RateVerifier
                 _ => CreateScenarioFailure(observations, RateVerificationFailureKind.HostFailure, "The scenario kind is not supported.")
             };
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return CreateScenarioFailure(observations, RateVerificationFailureKind.Cancelled, "Verification was cancelled.");
         }
@@ -335,111 +345,220 @@ public sealed class RateVerifier
         var requestWasIssued = false;
         try
         {
-            cancellationToken.ThrowIfCancellationRequested();
-            request = requestFactory(requestNumber) ?? throw new InvalidOperationException();
-            requestWasIssued = true;
-
-            using var response = await client.SendAsync(
-                request,
-                HttpCompletionOption.ResponseHeadersRead,
-                cancellationToken).ConfigureAwait(false);
-
-            var statusCode = (int)response.StatusCode;
-            var predicateMatched = false;
             try
             {
-                predicateMatched = expectRejection
-                    ? expectation.RejectedPredicate(response)
-                    : expectation.AcceptedPredicate(response);
+                cancellationToken.ThrowIfCancellationRequested();
+                request = requestFactory(requestNumber) ?? throw new InvalidOperationException();
+            }
+            catch (OperationCanceledException)
+            {
+                return RequestEvaluation.Failure(
+                    requestNumber,
+                    statusCode: null,
+                    RateVerificationFailureKind.Cancelled,
+                    "Verification was cancelled.",
+                    requestWasIssued);
             }
             catch
             {
                 return RequestEvaluation.Failure(
                     requestNumber,
-                    statusCode,
+                    statusCode: null,
                     RateVerificationFailureKind.HostFailure,
-                    "A response predicate failed without a usable verdict.",
+                    "The request factory or HTTP host failed.",
                     requestWasIssued);
             }
 
-            if (!predicateMatched)
+            requestWasIssued = true;
+            HttpResponseMessage response;
+            try
             {
-                var failure = expectRejection
-                    ? response.IsSuccessStatusCode ? RateVerificationFailureKind.MissingRejection : RateVerificationFailureKind.StatusMismatch
-                    : response.IsSuccessStatusCode ? RateVerificationFailureKind.StatusMismatch : RateVerificationFailureKind.EarlyRejection;
-                return RequestEvaluation.Failure(requestNumber, statusCode, failure, GetMessage(failure), requestWasIssued);
+                response = await client.SendAsync(
+                    request,
+                    HttpCompletionOption.ResponseHeadersRead,
+                    cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return RequestEvaluation.Failure(
+                    requestNumber,
+                    statusCode: null,
+                    cancellationToken.IsCancellationRequested
+                        ? RateVerificationFailureKind.Cancelled
+                        : RateVerificationFailureKind.HostFailure,
+                    cancellationToken.IsCancellationRequested
+                        ? "Verification was cancelled."
+                        : "The HTTP host cancelled the request without caller cancellation.",
+                    requestWasIssued);
             }
 
-            if (expectRejection)
+            using (response)
             {
-                bool acceptedMatched;
+                var statusCode = (int)response.StatusCode;
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return RequestEvaluation.Failure(
+                        requestNumber,
+                        statusCode,
+                        RateVerificationFailureKind.Cancelled,
+                        "Verification was cancelled.",
+                        requestWasIssued);
+                }
+
+                var predicateMatched = false;
                 try
                 {
-                    acceptedMatched = expectation.AcceptedPredicate(response);
+                    predicateMatched = expectRejection
+                        ? expectation.RejectedPredicate(response)
+                        : expectation.AcceptedPredicate(response);
                 }
                 catch
                 {
-                    return RequestEvaluation.Failure(
-                        requestNumber,
-                        statusCode,
-                        RateVerificationFailureKind.HostFailure,
-                        "A response predicate failed without a usable verdict.",
-                        requestWasIssued);
-                }
-
-                if (acceptedMatched)
-                {
-                    return RequestEvaluation.Failure(
-                        requestNumber,
-                        statusCode,
-                        RateVerificationFailureKind.StatusMismatch,
-                        "The rejection response also matched the accepted predicate.",
-                        requestWasIssued);
-                }
-
-                if (expectation.RejectionStatusCode is int expectedStatus && statusCode != expectedStatus)
-                {
-                    return RequestEvaluation.Failure(
-                        requestNumber,
-                        statusCode,
-                        RateVerificationFailureKind.StatusMismatch,
-                        "The rejection status did not match the expectation.",
-                        requestWasIssued);
-                }
-
-                foreach (var header in expectation.RejectedHeaderPredicates)
-                {
-                    var value = GetHeaderValue(response, header.Key);
-                    bool headerMatched;
-                    try
-                    {
-                        headerMatched = header.Value(value);
-                    }
-                    catch
-                    {
-                        return RequestEvaluation.Failure(
+                    return cancellationToken.IsCancellationRequested
+                        ? RequestEvaluation.Failure(
+                            requestNumber,
+                            statusCode,
+                            RateVerificationFailureKind.Cancelled,
+                            "Verification was cancelled.",
+                            requestWasIssued)
+                        : RequestEvaluation.Failure(
                             requestNumber,
                             statusCode,
                             RateVerificationFailureKind.HostFailure,
-                            "A response-header predicate failed without a usable verdict.",
+                            "A response predicate failed without a usable verdict.",
                             requestWasIssued);
+                }
+
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    return RequestEvaluation.Failure(
+                        requestNumber,
+                        statusCode,
+                        RateVerificationFailureKind.Cancelled,
+                        "Verification was cancelled.",
+                        requestWasIssued);
+                }
+
+                if (!predicateMatched)
+                {
+                    var failure = expectRejection
+                        ? response.IsSuccessStatusCode ? RateVerificationFailureKind.MissingRejection : RateVerificationFailureKind.StatusMismatch
+                        : response.IsSuccessStatusCode ? RateVerificationFailureKind.StatusMismatch : RateVerificationFailureKind.EarlyRejection;
+                    return RequestEvaluation.Failure(requestNumber, statusCode, failure, GetMessage(failure), requestWasIssued);
+                }
+
+                if (expectRejection)
+                {
+                    bool acceptedMatched;
+                    try
+                    {
+                        acceptedMatched = expectation.AcceptedPredicate(response);
+                    }
+                    catch
+                    {
+                        return cancellationToken.IsCancellationRequested
+                            ? RequestEvaluation.Failure(
+                                requestNumber,
+                                statusCode,
+                                RateVerificationFailureKind.Cancelled,
+                                "Verification was cancelled.",
+                                requestWasIssued)
+                            : RequestEvaluation.Failure(
+                                requestNumber,
+                                statusCode,
+                                RateVerificationFailureKind.HostFailure,
+                                "A response predicate failed without a usable verdict.",
+                                requestWasIssued);
                     }
 
-                    if (!headerMatched)
+                    if (cancellationToken.IsCancellationRequested)
                     {
                         return RequestEvaluation.Failure(
                             requestNumber,
                             statusCode,
-                            RateVerificationFailureKind.HeaderMismatch,
-                            "A rejection response-header predicate did not match.",
+                            RateVerificationFailureKind.Cancelled,
+                            "Verification was cancelled.",
                             requestWasIssued);
                     }
-                }
-            }
 
-            return RequestEvaluation.Success(requestNumber, statusCode, requestWasIssued);
+                    if (acceptedMatched)
+                    {
+                        return RequestEvaluation.Failure(
+                            requestNumber,
+                            statusCode,
+                            RateVerificationFailureKind.StatusMismatch,
+                            "The rejection response also matched the accepted predicate.",
+                            requestWasIssued);
+                    }
+
+                    if (expectation.RejectionStatusCode is int expectedStatus && statusCode != expectedStatus)
+                    {
+                        return RequestEvaluation.Failure(
+                            requestNumber,
+                            statusCode,
+                            RateVerificationFailureKind.StatusMismatch,
+                            "The rejection status did not match the expectation.",
+                            requestWasIssued);
+                    }
+
+                    foreach (var header in expectation.RejectedHeaderPredicates)
+                    {
+                        var value = GetHeaderValue(response, header.Key);
+                        bool headerMatched;
+                        try
+                        {
+                            headerMatched = header.Value(value);
+                        }
+                        catch
+                        {
+                            return cancellationToken.IsCancellationRequested
+                                ? RequestEvaluation.Failure(
+                                    requestNumber,
+                                    statusCode,
+                                    RateVerificationFailureKind.Cancelled,
+                                    "Verification was cancelled.",
+                                    requestWasIssued)
+                                : RequestEvaluation.Failure(
+                                    requestNumber,
+                                    statusCode,
+                                    RateVerificationFailureKind.HostFailure,
+                                    "A response-header predicate failed without a usable verdict.",
+                                    requestWasIssued);
+                        }
+
+                        if (cancellationToken.IsCancellationRequested)
+                        {
+                            return RequestEvaluation.Failure(
+                                requestNumber,
+                                statusCode,
+                                RateVerificationFailureKind.Cancelled,
+                                "Verification was cancelled.",
+                                requestWasIssued);
+                        }
+
+                        if (!headerMatched)
+                        {
+                            return RequestEvaluation.Failure(
+                                requestNumber,
+                                statusCode,
+                                RateVerificationFailureKind.HeaderMismatch,
+                                "A rejection response-header predicate did not match.",
+                                requestWasIssued);
+                        }
+                    }
+                }
+
+                return cancellationToken.IsCancellationRequested
+                    ? RequestEvaluation.Failure(
+                        requestNumber,
+                        statusCode,
+                        RateVerificationFailureKind.Cancelled,
+                        "Verification was cancelled.",
+                        requestWasIssued)
+                    : RequestEvaluation.Success(requestNumber, statusCode, requestWasIssued);
+            }
         }
-        catch (OperationCanceledException)
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
             return RequestEvaluation.Failure(
                 requestNumber,
