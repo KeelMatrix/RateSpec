@@ -73,6 +73,14 @@ jobs:
         shell: pwsh
         run: pwsh ./tests/Validate-Release.Tests.ps1
 
+      - name: Test release-facing text hygiene
+        shell: pwsh
+        run: pwsh ./tests/Validate-TextHygiene.Tests.ps1
+
+      - name: Test reachable commit message policy
+        shell: pwsh
+        run: pwsh ./scripts/Verify-CommitMessages.ps1 -SelfTest
+
       - name: Test package restore identity validator
         shell: pwsh
         run: pwsh ./tests/Validate-PackageRestore.Tests.ps1

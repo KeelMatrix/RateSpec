@@ -41,7 +41,7 @@ public sealed class RateExpectation
     /// <param name="acceptedRequestCount">The number of requests expected to be accepted before rejection.</param>
     /// <param name="acceptedPredicate">Optional predicate for accepted responses; defaults to any 2xx response.</param>
     /// <param name="rejectedPredicate">Optional predicate for the rejection response; defaults to any non-2xx response.</param>
-    /// <param name="rejectionStatusCode">Optional exact status code for the rejection response. With the default predicates, this must be a non-success status code (100-199 or 300-599), because the accepted predicate matches 200-299 and the rejected predicate is its complement. When either predicate is custom, the caller must ensure that the declared status code does not satisfy the accepted predicate and does satisfy the rejected predicate.</param>
+    /// <param name="rejectionStatusCode">Optional exact status code for the rejection response. The status must satisfy the rejection predicate and must not satisfy the accepted predicate. Contradictions that are knowable from the default predicates fail while the expectation is created; custom-predicate overlap is rejected when the response is evaluated.</param>
     /// <param name="rejectedHeaderPredicates">Optional rejection-header predicates keyed by header name.</param>
     /// <returns>A validated burst expectation.</returns>
     public static RateExpectation Burst(
@@ -147,10 +147,17 @@ public sealed class RateExpectation
         {
             ValidateStatusCode(rejectionStatusCode.Value, nameof(rejectionStatusCode));
 
-            if (!isUnlimited && acceptedPredicate is null && rejectedPredicate is null && rejectionStatusCode.Value is >= 200 and <= 299)
+            if (!isUnlimited && acceptedPredicate is null && rejectionStatusCode.Value is >= 200 and <= 299)
             {
                 throw new ArgumentException(
-                    "The rejection status code cannot be a success status when the default accepted and rejected predicates are used.",
+                    "The rejection status code cannot be a success status when the default accepted predicate is used.",
+                    nameof(rejectionStatusCode));
+            }
+
+            if (!isUnlimited && rejectedPredicate is null && rejectionStatusCode.Value is >= 200 and <= 299)
+            {
+                throw new ArgumentException(
+                    "The rejection status code cannot be a success status when the default rejected predicate is used.",
                     nameof(rejectionStatusCode));
             }
         }

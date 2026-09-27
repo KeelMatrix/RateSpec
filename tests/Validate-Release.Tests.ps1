@@ -41,14 +41,20 @@ function Invoke-FixtureValidator {
         [Parameter(Mandatory)] [string] $Fixture
     )
 
-    $output = @(
-        & pwsh -NoProfile -File (Join-Path $Fixture 'scripts/Validate-Release.ps1') `
+    $output = @()
+    $exitCode = 0
+    try {
+        & (Join-Path $Fixture 'scripts/Validate-Release.ps1') `
             -Tag 'v0.1.0' `
-            -RepositoryRoot $Fixture 2>&1
-    )
+            -RepositoryRoot $Fixture 2>&1 | ForEach-Object { $output += $_.ToString() }
+    }
+    catch {
+        $output += $_.Exception.Message
+        $exitCode = 1
+    }
 
     [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
+        ExitCode = $exitCode
         Output = ($output | Out-String)
     }
 }

@@ -32,6 +32,7 @@ $package = Get-ChildItem artifacts/package -Filter "KeelMatrix.RateSpec.*.nupkg"
 $symbols = Get-ChildItem artifacts/package -Filter "KeelMatrix.RateSpec.*.snupkg"
 pwsh ./scripts/Validate-PackageArchive.ps1 -PackagePath $package.FullName -SymbolPackagePath $symbols.FullName -AllowMissingIcon
 pwsh ./tests/Validate-PackageArchive.Tests.ps1 -PackagePath $package.FullName -SymbolPackagePath $symbols.FullName
+pwsh ./scripts/Verify-CommitMessages.ps1 -SelfTest
 ```
 
 The package-consumer smoke test is a separate phase because the solution includes the consumer before the local package

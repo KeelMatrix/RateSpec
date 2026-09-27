@@ -160,7 +160,7 @@ public sealed class RateVerifier
                 _ => CreateScenarioFailure(observations, RateVerificationFailureKind.HostFailure, "The scenario kind is not supported.")
             };
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             return CreateScenarioFailure(observations, RateVerificationFailureKind.Cancelled, "Verification was cancelled.");
         }
@@ -372,6 +372,31 @@ public sealed class RateVerifier
 
             if (expectRejection)
             {
+                bool acceptedMatched;
+                try
+                {
+                    acceptedMatched = expectation.AcceptedPredicate(response);
+                }
+                catch
+                {
+                    return RequestEvaluation.Failure(
+                        requestNumber,
+                        statusCode,
+                        RateVerificationFailureKind.HostFailure,
+                        "A response predicate failed without a usable verdict.",
+                        requestWasIssued);
+                }
+
+                if (acceptedMatched)
+                {
+                    return RequestEvaluation.Failure(
+                        requestNumber,
+                        statusCode,
+                        RateVerificationFailureKind.StatusMismatch,
+                        "The rejection response also matched the accepted predicate.",
+                        requestWasIssued);
+                }
+
                 if (expectation.RejectionStatusCode is int expectedStatus && statusCode != expectedStatus)
                 {
                     return RequestEvaluation.Failure(
@@ -414,7 +439,7 @@ public sealed class RateVerifier
 
             return RequestEvaluation.Success(requestNumber, statusCode, requestWasIssued);
         }
-        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        catch (OperationCanceledException)
         {
             return RequestEvaluation.Failure(
                 requestNumber,

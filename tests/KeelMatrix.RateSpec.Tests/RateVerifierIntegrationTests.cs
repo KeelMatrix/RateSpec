@@ -321,6 +321,68 @@ public sealed class RateVerifierIntegrationTests
     }
 
     [Fact]
+    public void Custom_rejection_predicate_cannot_overrule_default_accepted_status()
+    {
+        Assert.Throws<ArgumentException>(() => RateExpectation.Burst(
+            1,
+            rejectedPredicate: _ => true,
+            rejectionStatusCode: StatusCodes.Status204NoContent,
+            rejectedHeaderPredicates: new Dictionary<string, Func<string?, bool>>
+            {
+                ["X-RateSpec-Decision"] = value => value == "rejected"
+            }));
+    }
+
+    [Fact]
+    public void Custom_accepted_predicate_cannot_use_default_rejection_for_a_success_status()
+    {
+        Assert.Throws<ArgumentException>(() => RateExpectation.Burst(
+            1,
+            acceptedPredicate: _ => true,
+            rejectionStatusCode: StatusCodes.Status200OK));
+    }
+
+    [Fact]
+    public async Task Rejection_matching_both_custom_predicates_cannot_pass()
+    {
+        using var client = new HttpClient(new StatusHandler(_ => HttpStatusCode.TooManyRequests));
+
+        var result = await VerifyAsync(
+            client,
+            RateScenario.InitialBurst(
+                _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                RateExpectation.Burst(
+                    1,
+                    acceptedPredicate: _ => true,
+                    rejectedPredicate: _ => true,
+                    rejectionStatusCode: StatusCodes.Status429TooManyRequests)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.StatusMismatch, result.FailureKind);
+        Assert.Equal(2, result.RequestsIssued);
+        Assert.Contains("also matched", result.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task Rejection_matching_custom_acceptance_cannot_pass_with_default_rejection()
+    {
+        using var client = new HttpClient(new StatusHandler(_ => HttpStatusCode.TooManyRequests));
+
+        var result = await VerifyAsync(
+            client,
+            RateScenario.InitialBurst(
+                _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                RateExpectation.Burst(
+                    1,
+                    acceptedPredicate: _ => true,
+                    rejectionStatusCode: StatusCodes.Status429TooManyRequests)));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.StatusMismatch, result.FailureKind);
+        Assert.Equal(2, result.RequestsIssued);
+    }
+
+    [Fact]
     public async Task Cancellation_stops_an_in_flight_request_without_retrying()
     {
         using var cancellationSource = new CancellationTokenSource();
@@ -343,6 +405,151 @@ public sealed class RateVerifierIntegrationTests
         Assert.Equal(RateVerificationFailureKind.Cancelled, result.FailureKind);
         Assert.Equal(1, calls);
         Assert.Equal(1, result.RequestsIssued);
+    }
+
+    [Theory]
+    [InlineData("initial")]
+    [InlineData("unlimited")]
+    [InlineData("partition")]
+    [InlineData("shared")]
+    public async Task Factory_operation_cancellation_is_classified_as_cancelled_for_every_shape(string scenarioKind)
+    {
+        var handler = new StatusHandler(_ => HttpStatusCode.OK);
+        using var client = new HttpClient(handler);
+        var cancelledFactory = new RateRequestFactory(_ => throw new OperationCanceledException());
+        var ordinaryFactory = new RateRequestFactory(_ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"));
+        var scenario = scenarioKind switch
+        {
+            "initial" => RateScenario.InitialBurst(cancelledFactory, RateExpectation.Burst(1)),
+            "unlimited" => RateScenario.Unlimited(cancelledFactory, RateExpectation.Unlimited(1)),
+            "partition" => RateScenario.PartitionIsolation(cancelledFactory, ordinaryFactory, RateExpectation.Burst(1)),
+            "shared" => RateScenario.SharedPartition(cancelledFactory, ordinaryFactory, RateExpectation.Burst(1)),
+            _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+        };
+
+        var activationCalls = 0;
+        var result = await new RateVerifier(100, () => activationCalls++)
+            .VerifyAsync(new RateContract(client, scenario));
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.Cancelled, result.FailureKind);
+        Assert.Equal(0, result.RequestsIssued);
+        Assert.Equal(0, handler.Calls);
+        Assert.Equal(0, result.Scenarios.Single().RequestsIssued);
+        Assert.Equal(0, activationCalls);
+    }
+
+    [Theory]
+    [InlineData("initial")]
+    [InlineData("unlimited")]
+    [InlineData("partition")]
+    [InlineData("shared")]
+    public async Task Cancellation_before_factory_creation_issues_no_request_for_every_shape(string scenarioKind)
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        cancellationSource.Cancel();
+        var factoryCalls = 0;
+        using var client = new HttpClient(new CountingHandler(() => { }));
+        var factory = new RateRequestFactory(_ =>
+        {
+            factoryCalls++;
+            return new HttpRequestMessage(HttpMethod.Get, "http://local.test/");
+        });
+        var scenario = scenarioKind switch
+        {
+            "initial" => RateScenario.InitialBurst(factory, RateExpectation.Burst(1)),
+            "unlimited" => RateScenario.Unlimited(factory, RateExpectation.Unlimited(1)),
+            "partition" => RateScenario.PartitionIsolation(factory, factory, RateExpectation.Burst(1)),
+            "shared" => RateScenario.SharedPartition(factory, factory, RateExpectation.Burst(1)),
+            _ => throw new ArgumentOutOfRangeException(nameof(scenarioKind))
+        };
+
+        var activationCalls = 0;
+        var result = await new RateVerifier(100, () => activationCalls++)
+            .VerifyAsync(new RateContract(client, scenario), cancellationSource.Token);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.Cancelled, result.FailureKind);
+        Assert.Equal(0, result.RequestsIssued);
+        Assert.Empty(result.Scenarios);
+        Assert.Equal(0, factoryCalls);
+        Assert.Equal(0, activationCalls);
+    }
+
+    [Fact]
+    public async Task Cancellation_between_unlimited_requests_preserves_prior_observation()
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        using var client = new HttpClient(new StatusHandler(
+            _ => HttpStatusCode.OK,
+            callNumber =>
+            {
+                if (callNumber == 0)
+                {
+                    cancellationSource.Cancel();
+                }
+            }));
+
+        var activationCalls = 0;
+        var result = await new RateVerifier(100, () => activationCalls++).VerifyAsync(
+            new RateContract(
+                client,
+                RateScenario.Unlimited(
+                    _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                    RateExpectation.Unlimited(3))),
+            cancellationSource.Token);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.Cancelled, result.FailureKind);
+        Assert.Equal(1, result.RequestsIssued);
+        Assert.Equal(1, result.Scenarios.Single().Observations.Count(observation => observation.StatusCode is not null));
+        Assert.Equal(200, result.Scenarios.Single().Observations[0].StatusCode);
+        Assert.Equal(1, activationCalls);
+    }
+
+    [Theory]
+    [InlineData("partition")]
+    [InlineData("shared")]
+    public async Task Cancellation_between_partition_phases_preserves_prior_observations(string scenarioKind)
+    {
+        using var cancellationSource = new CancellationTokenSource();
+        using var client = new HttpClient(new StatusHandler(
+            callNumber => callNumber == 0 ? HttpStatusCode.OK : HttpStatusCode.TooManyRequests,
+            callNumber =>
+            {
+                if (callNumber == 1)
+                {
+                    cancellationSource.Cancel();
+                }
+            }));
+
+        var firstFactoryCalls = 0;
+        var secondFactoryCalls = 0;
+        var firstFactory = new RateRequestFactory(_ =>
+        {
+            firstFactoryCalls++;
+            return new HttpRequestMessage(HttpMethod.Get, "http://local.test/");
+        });
+        var secondFactory = new RateRequestFactory(_ =>
+        {
+            secondFactoryCalls++;
+            return new HttpRequestMessage(HttpMethod.Get, "http://local.test/");
+        });
+        var scenario = scenarioKind == "partition"
+            ? RateScenario.PartitionIsolation(firstFactory, secondFactory, RateExpectation.Burst(1))
+            : RateScenario.SharedPartition(firstFactory, secondFactory, RateExpectation.Burst(1));
+
+        var activationCalls = 0;
+        var result = await new RateVerifier(100, () => activationCalls++)
+            .VerifyAsync(new RateContract(client, scenario), cancellationSource.Token);
+
+        Assert.False(result.Succeeded);
+        Assert.Equal(RateVerificationFailureKind.Cancelled, result.FailureKind);
+        Assert.Equal(2, result.RequestsIssued);
+        Assert.Equal(2, result.Scenarios.Single().Observations.Count(observation => observation.StatusCode is not null));
+        Assert.Equal(2, firstFactoryCalls);
+        Assert.Equal(0, secondFactoryCalls);
+        Assert.Equal(1, activationCalls);
     }
 
     [Fact]
@@ -593,14 +800,21 @@ public sealed class RateVerifierIntegrationTests
     private sealed class StatusHandler : HttpMessageHandler
     {
         private readonly Func<int, HttpStatusCode> _statusFactory;
+        private readonly Action<int>? _onCall;
 
-        internal StatusHandler(Func<int, HttpStatusCode> statusFactory) => _statusFactory = statusFactory;
+        internal StatusHandler(Func<int, HttpStatusCode> statusFactory, Action<int>? onCall = null)
+        {
+            _statusFactory = statusFactory;
+            _onCall = onCall;
+        }
 
         internal int Calls { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
-            var status = _statusFactory(Calls++);
+            var callNumber = Calls++;
+            _onCall?.Invoke(callNumber);
+            var status = _statusFactory(callNumber);
             return Task.FromResult(new HttpResponseMessage(status));
         }
     }

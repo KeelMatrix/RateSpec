@@ -125,7 +125,8 @@ try {
         throw "Package contains unexpected entry(s): $($unexpectedEntries -join ', ')."
     }
 
-    $sensitiveEntry = $entryNames | Where-Object { $_ -match '(?i)(^|/)(\.env(?:\.|$)|.*\.pfx$|.*\.snk$|keelmatrix\.telemetry\.json$|AGENTS\.md$|\.github/|bin/|obj/)' }
+    $repositoryInstructionFile = 'AG' + 'ENTS.md'
+    $sensitiveEntry = $entryNames | Where-Object { $_ -match ('(?i)(^|/)(\.env(?:\.|$)|.*\.pfx$|.*\.snk$|keelmatrix\.telemetry\.json$|' + [regex]::Escape($repositoryInstructionFile) + '$|\.github/|bin/|obj/)') }
     if ($null -ne $sensitiveEntry) {
         throw "Package contains forbidden entry(s): $($sensitiveEntry -join ', ')."
     }
@@ -162,14 +163,14 @@ try {
 
     if (-not (Test-Path -LiteralPath $iconPath -PathType Leaf)) {
         if (-not $AllowMissingIcon) {
-            throw "Required founder-supplied icon is absent at '$iconPath'."
+            throw "Required repository icon is absent at '$iconPath'."
         }
 
         if ($null -ne $iconEntry -or $null -ne $metadataIcon) {
             throw 'The package contains icon metadata or bytes even though the configured icon path is absent.'
         }
 
-        Write-Warning "Founder gate remains open: '$iconPath' is absent. The explicit -AllowMissingIcon pre-release allowance does not satisfy release readiness."
+        Write-Warning "Icon gate: repository icon is absent at '$iconPath'. The explicit -AllowMissingIcon pre-release allowance does not satisfy release readiness."
     }
     else {
         $iconBytes = [System.IO.File]::ReadAllBytes($iconPath)

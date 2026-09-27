@@ -24,7 +24,7 @@ RateSpec targets `net8.0` and is intended for .NET 8 integration-test projects u
 the library tests and formatting on Windows, Linux, and macOS; the package archive and isolated package-consumer gate
 runs on Ubuntu. Earlier .NET versions are not supported.
 
-The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. With those defaults, a declared `rejectionStatusCode` must be outside 200-299; a 2xx rejection status contradicts the two default predicates and is rejected while the expectation is created. When either predicate is custom, the caller must ensure that the declared rejection status does not satisfy the accepted predicate and does satisfy the rejected predicate. `BurstWithSuccessStatusRange` uses the default non-2xx rejection predicate, so it also rejects every exact 2xx rejection code during construction, even when the accepted range itself is outside 200-299.
+The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. With those defaults, a declared `rejectionStatusCode` must be outside 200-299; a 2xx rejection status contradicts the two default predicates and is rejected while the expectation is created. When either predicate is custom, the verifier still requires the observed rejection response to satisfy the rejected predicate and not satisfy the accepted predicate. A response matching both predicates therefore cannot produce a successful verdict. `BurstWithSuccessStatusRange` uses the default non-2xx rejection predicate, so it also rejects every exact 2xx rejection code during construction, even when the accepted range itself is outside 200-299.
 
 ## Initial burst and rejection
 
@@ -63,7 +63,7 @@ RateExpectation.Burst(
     });
 ```
 
-Header predicates are generic and run only on the expected rejection response. RateSpec does not promise a particular `Retry-After` value. Current runtime work continues to examine metadata semantics across algorithms, so timing metadata should be asserted only when the application contract deliberately requires it.
+Header predicates are generic and run only on the expected rejection response after the accepted/rejected response predicates have been checked. RateSpec does not promise a particular `Retry-After` value. Current runtime work continues to examine metadata semantics across algorithms, so timing metadata should be asserted only when the application contract deliberately requires it.
 
 ## Safety request ceiling
 
