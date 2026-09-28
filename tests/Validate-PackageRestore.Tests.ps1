@@ -1,4 +1,5 @@
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../build/Invoke-NestedPwsh.ps1')
 
 $repositoryRoot = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path
 $validatorPath = Join-Path $repositoryRoot 'scripts/Validate-PackageRestore.ps1'
@@ -22,7 +23,7 @@ function Set-AssetsHash {
 
 function Invoke-RestoreValidator {
     $output = @(
-        & pwsh -NoProfile -File $validatorPath -PackagePath $packagePath -AssetsFile $assetsPath 2>&1
+        Invoke-NestedPwsh -NoProfile -File $validatorPath -PackagePath $packagePath -AssetsFile $assetsPath 2>&1
     )
 
     [pscustomobject]@{

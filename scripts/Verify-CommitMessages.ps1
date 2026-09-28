@@ -6,6 +6,7 @@ param(
 
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../build/Invoke-NestedPwsh.ps1')
 
 $policyVersion = 2
 
@@ -86,7 +87,7 @@ if ($SelfTest) {
             & git -C $selfTestRoot commit --quiet --file message.txt
         }
 
-        $selfTestOutput = @(& pwsh -NoProfile -File $PSCommandPath -RepositoryPath $selfTestRoot 2>&1)
+        $selfTestOutput = @(Invoke-NestedPwsh -NoProfile -File $PSCommandPath -RepositoryPath $selfTestRoot 2>&1)
         $selfTestExit = $LASTEXITCODE
         $violationCount = @($selfTestOutput | Where-Object { $_ -match '^COMMIT_MESSAGE_VIOLATION=' }).Count
         if ($selfTestExit -eq 0 -or $violationCount -ne $trailerNames.Count) {
