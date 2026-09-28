@@ -6,6 +6,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../build/Invoke-NestedPwsh.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 $validatorPath = Join-Path $RepositoryRoot 'scripts/Validate-PackageArchive.ps1'
@@ -42,7 +43,7 @@ function Assert-ArchiveRejected {
     )
 
     $output = @(
-        & pwsh -NoProfile -File $validatorPath `
+        Invoke-NestedPwsh -NoProfile -File $validatorPath `
             -PackagePath $CandidatePackage `
             -SymbolPackagePath $CandidateSymbols `
             -RepositoryRoot $RepositoryRoot `
