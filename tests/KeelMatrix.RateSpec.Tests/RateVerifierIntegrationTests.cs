@@ -2,6 +2,7 @@
 using System.Net.Http.Headers;
 using System.Threading.RateLimiting;
 using KeelMatrix.RateSpec;
+using KeelMatrix.Telemetry;
 using Microsoft.AspNetCore.Builder;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.RateLimiting;
@@ -707,6 +708,30 @@ public sealed class RateVerifierIntegrationTests
 
         Assert.False(result.Succeeded);
         Assert.Equal(RateVerificationFailureKind.MissingRejection, result.FailureKind);
+        Assert.Equal(2, result.RequestsIssued);
+        Assert.Equal(1, activationCalls);
+    }
+
+    [Fact]
+    public async Task Shared_telemetry_client_keeps_verification_verdict_best_effort()
+    {
+        using var client = new HttpClient(new StatusHandler(
+            callNumber => callNumber == 0 ? HttpStatusCode.OK : HttpStatusCode.TooManyRequests));
+        var telemetryClient = new Client("RateSpec", typeof(RateVerifier));
+        var activationCalls = 0;
+
+        var result = await new RateVerifier(100, () =>
+        {
+            telemetryClient.TrackActivation();
+            activationCalls++;
+        }).VerifyAsync(
+            new RateContract(
+                client,
+                RateScenario.InitialBurst(
+                    _ => new HttpRequestMessage(HttpMethod.Get, "http://local.test/"),
+                    RateExpectation.Burst(1))));
+
+        Assert.True(result.Succeeded, result.Message);
         Assert.Equal(2, result.RequestsIssued);
         Assert.Equal(1, activationCalls);
     }

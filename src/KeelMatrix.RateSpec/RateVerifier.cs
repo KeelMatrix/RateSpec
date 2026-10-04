@@ -598,22 +598,10 @@ public sealed class RateVerifier
     {
         if (result.Scenarios.Any(static scenario => scenario.Observations.Any(static observation => observation.RequestWasIssued)))
         {
-            TryTrackActivation();
+            _activationTracker();
         }
 
         return result;
-    }
-
-    private void TryTrackActivation()
-    {
-        try
-        {
-            _activationTracker();
-        }
-        catch
-        {
-            // Telemetry is best effort and must never alter a verification verdict.
-        }
     }
 
     private static void TrackActivation() => new Client("RateSpec", typeof(RateVerifier)).TrackActivation();
