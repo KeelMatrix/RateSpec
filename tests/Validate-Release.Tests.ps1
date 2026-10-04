@@ -17,9 +17,12 @@ function Assert-True {
 
 function New-ValidatorFixture {
     $fixture = Join-Path $testRoot ([Guid]::NewGuid().ToString('N'))
+    New-Item -ItemType Directory -Path (Join-Path $fixture 'build') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $fixture 'scripts') -Force | Out-Null
     New-Item -ItemType Directory -Path (Join-Path $fixture 'src/KeelMatrix.RateSpec') -Force | Out-Null
 
+    Copy-Item (Join-Path $repositoryRoot 'build/Invoke-NestedPwsh.ps1') (Join-Path $fixture 'build')
+    Copy-Item (Join-Path $repositoryRoot 'build/Test-NestedPwshLaunch.ps1') (Join-Path $fixture 'build')
     Copy-Item (Join-Path $repositoryRoot 'Directory.Build.props') $fixture
     Copy-Item (Join-Path $repositoryRoot 'Directory.Packages.props') $fixture
     Copy-Item (Join-Path $repositoryRoot 'src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj') (Join-Path $fixture 'src/KeelMatrix.RateSpec')
