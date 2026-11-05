@@ -21,6 +21,7 @@ New-Item -ItemType Directory -Path (Join-Path $testRoot 'artifacts/package') -Fo
 [IO.File]::WriteAllText((Join-Path $testRoot 'artifacts/package/KeelMatrix.RateSpec.0.1.0.nupkg'), '')
 [IO.File]::WriteAllText((Join-Path $testRoot 'artifacts/package/KeelMatrix.RateSpec.0.1.0.snupkg'), '')
 $previousTag = $env:RELEASE_TAG
+$previousExitCode = $global:LASTEXITCODE
 Push-Location $testRoot
 try {
     $env:RELEASE_TAG = 'v0.1.0'
@@ -54,6 +55,7 @@ try {
     Write-Output 'Workflow failure propagation passed: four bodies, success and each native-command failure.'
 }
 finally {
+    $global:LASTEXITCODE = $previousExitCode
     $env:RELEASE_TAG = $previousTag
     Pop-Location
     $resolvedRoot = [IO.Path]::GetFullPath($testRoot)

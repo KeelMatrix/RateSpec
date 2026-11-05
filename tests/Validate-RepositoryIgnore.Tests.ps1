@@ -14,6 +14,7 @@ function Assert-GeneratedFilesIgnored {
 
 Assert-GeneratedFilesIgnored -Root $repositoryRoot
 $testRoot = Join-Path ([IO.Path]::GetTempPath()) "ratespec-ignore-$([Guid]::NewGuid().ToString('N'))"
+$previousExitCode = $global:LASTEXITCODE
 New-Item -ItemType Directory -Path $testRoot | Out-Null
 try {
     & git -C $testRoot init --quiet
@@ -36,4 +37,5 @@ finally {
         throw 'Ignore test cleanup path is outside temporary storage.'
     }
     Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
+    $global:LASTEXITCODE = $previousExitCode
 }
