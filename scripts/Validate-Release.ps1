@@ -39,11 +39,16 @@ if ($packageId -ne 'KeelMatrix.RateSpec') {
 
 $changelogPath = Join-Path $RepositoryRoot 'CHANGELOG.md'
 $changelog = Get-Content -Raw $changelogPath
-# Read comments and fences in context: comment delimiters inside code are inert.
+# Supported changelog subset: top-level ATX headings, paragraphs, flat bullets,
+# closed fences, standalone comments, escapes and same-line code spans.
+# Reject other block/HTML contexts rather than infer heading identity from them.
+# See docs/DEV.md for the input contract. Never join text around hidden blocks.
 $visible = [Collections.Generic.List[string]]::new()
 $fenceCharacter = $null
 $fenceLength = 0
 $inComment = $false
+$inBulletList = $false
+$blankBefore = $true
 foreach ($line in ($changelog -split '\r?\n')) {
     if ($null -ne $fenceCharacter) {
         if ($line -match ('^ {0,3}' + [regex]::Escape($fenceCharacter) + '{' + $fenceLength + ',}[ \t]*$')) {
@@ -52,33 +57,85 @@ foreach ($line in ($changelog -split '\r?\n')) {
         $visible.Add('')
         continue
     }
-    if (-not $inComment -and $line -match '^ {0,3}(?<fence>`{3,}|~{3,})[^\r\n]*$') {
-        $fenceCharacter = $Matches.fence.Substring(0, 1)
-        $fenceLength = $Matches.fence.Length
+    if (-not $inComment -and $line -match '^[ \t]*$') {
+        $blankBefore = $true
         $visible.Add('')
         continue
     }
-    $text = ''
-    $position = 0
-    while ($position -lt $line.Length) {
-        if ($inComment) {
-            $end = $line.IndexOf('-->', $position, [StringComparison]::Ordinal)
-            if ($end -lt 0) { $text += ' ' * ($line.Length - $position); break }
-            $text += ' ' * ($end + 3 - $position)
-            $position = $end + 3
+    # An indented fence/comment following a bullet can belong to that list.
+    # A later unindented heading would end the container before its delimiter.
+    if (-not $inComment -and $inBulletList -and $line -match '^[ \t]+\S') {
+        throw 'CHANGELOG.md does not support indented blocks or continuations in bullet lists.'
+    }
+    if (-not $inComment -and $line -match '^ {0,3}(?<fence>`{3,}|~{3,})(?<info>[^\r\n]*)$') {
+        $fenceCharacter = $Matches.fence.Substring(0, 1)
+        $fenceLength = $Matches.fence.Length
+        if ($fenceCharacter -eq '`' -and $Matches.info.Contains('`')) {
+            throw 'CHANGELOG.md backtick fence info strings cannot contain backticks.'
+        }
+        $inBulletList = $false
+        $visible.Add('')
+        continue
+    }
+    $commentText = $line
+    if (-not $inComment -and $line -match '^ {0,3}<!--(?<body>.*)$') {
+        $commentText = $Matches.body
+        if ($commentText.StartsWith('>') -or $commentText.StartsWith('->')) {
+            throw 'CHANGELOG.md contains an unsupported HTML comment opener.'
+        }
+        $inComment = $true
+        $inBulletList = $false
+    }
+    if ($inComment) {
+        $end = $commentText.IndexOf('-->', [StringComparison]::Ordinal)
+        $body = if ($end -lt 0) { $commentText } else { $commentText.Substring(0, $end) }
+        if ($body.Contains('<!--') -or $body.Contains('--')) {
+            throw 'CHANGELOG.md contains an unsupported HTML comment body.'
+        }
+        if ($end -ge 0) {
+            if ($commentText.Substring($end + 3).Trim().Length -ne 0 -or $body.EndsWith('-')) {
+                throw 'CHANGELOG.md HTML comments must occupy standalone blocks.'
+            }
             $inComment = $false
         }
-        else {
-            $start = $line.IndexOf('<!--', $position, [StringComparison]::Ordinal)
-            if ($start -lt 0) { $text += $line.Substring($position); break }
-            $text += $line.Substring($position, $start - $position)
-            $text += ' ' * 4
-            $position = $start + 4
-            $inComment = $true
-        }
+        $visible.Add('')
+        continue
     }
-    if ($text.Contains('-->')) { throw 'CHANGELOG.md contains an unsupported HTML comment delimiter.' }
-    $visible.Add($text)
+
+    # No indented code, list continuations, quotes, reference definitions or
+    # Setext headings: each can alter the block identity of subsequent lines.
+    if ($line -match '^[ \t]+\S|^>|^\[[^\]]+\]:|^(?:=+|-+)[ \t]*$|^(?:\*[ \t]*){3,}$|^(?:_[ \t]*){3,}$|^(?:\*|\+|\d+[.)])[ \t]' -or
+        $line -match '^-[ \t]+(?:[ \t]|#{1,}(?:[ \t]|$)|>|`{3,}|~{3,}|[-+*](?:[ \t]|$)|\d+[.)][ \t])') {
+        throw 'CHANGELOG.md contains unsupported indentation or block syntax; use top-level ATX headings and flat - bullets.'
+    }
+    if ($line -match '^#+[ \t]+.*[\\`&*_]') {
+        throw 'CHANGELOG.md headings must use plain text without escapes, inline code, entities or emphasis.'
+    }
+    $position = 0
+    while ($position -lt $line.Length) {
+        if ($line[$position] -eq '\' -and $position + 1 -lt $line.Length) {
+            $position += 2
+            continue
+        }
+        if ($line[$position] -eq '`') {
+            $run = [regex]::Match($line.Substring($position), '^`+').Length
+            $position += $run
+            $closing = [regex]::Match($line.Substring($position), '(?<!`)`{' + $run + '}(?!`)')
+            if (-not $closing.Success) {
+                throw 'CHANGELOG.md inline code spans must close on the same line with an equal backtick run.'
+            }
+            $position += $closing.Index + $closing.Length
+            continue
+        }
+        if ($line[$position] -eq '<' -or $line.Substring($position).StartsWith('-->', [StringComparison]::Ordinal)) {
+            throw 'CHANGELOG.md contains unsupported raw HTML or comment syntax; use standalone comments, escaped text or code.'
+        }
+        $position++
+    }
+    if ($line.StartsWith('- ')) { $inBulletList = $true }
+    elseif ($blankBefore -or $line -match '^#+[ \t]') { $inBulletList = $false }
+    $blankBefore = $false
+    $visible.Add($line)
 }
 if ($inComment) { throw 'CHANGELOG.md contains an unterminated HTML comment.' }
 if ($null -ne $fenceCharacter) { throw 'CHANGELOG.md contains an unterminated Markdown fence.' }

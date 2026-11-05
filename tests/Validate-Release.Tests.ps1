@@ -296,6 +296,114 @@ This release is not yet published.
     Set-FixtureChangelog $fixture "$prefix$dated`n`n```````n<!--`n```````n`n<!--`n~~~`n$plannedHeading`n-->"
     Assert-ValidatorPasses $fixture 'Comment and fence delimiters respect their context'
 
+    # Exercise the public validator, including literal delimiters that must not
+    # change block context. Reuse one non-icon fixture for the bounded matrix.
+    $boundaryFixture = New-ValidatorFixture
+    $boundaryCount = 0
+    function Assert-Boundary([string] $Name, [string] $Text, [bool] $ShouldPass) {
+        Set-FixtureChangelog $boundaryFixture "$prefix$Text"
+        $result = Invoke-FixtureValidator $boundaryFixture
+        Assert-True (($result.ExitCode -eq 0) -eq $ShouldPass) "$Name expected pass=$ShouldPass; $($result.Output)"
+        $script:boundaryCount++
+    }
+
+    foreach ($length in 1..4) {
+        $ticks = '`' * $length
+        foreach ($literal in @("${ticks}<!--${ticks}", "${ticks}-->${ticks}", "${ticks}<!-- ``nested`` -->${ticks}")) {
+            # A run inside a span can have another length; equal runs close it.
+            if ($literal -eq "${ticks}<!-- ``nested`` -->${ticks}" -and $length -eq 1) { continue }
+            Assert-Boundary "Literal code run $length" "Literal $literal`n`n$dated" $true
+        }
+        foreach ($reverse in @($false, $true)) {
+            $fakeComment = "Literal ${ticks}<!--${ticks}`n$plannedHeading`nLiteral ${ticks}-->${ticks}"
+            $text = if ($reverse) { "$dated`n`n$fakeComment" } else { "$fakeComment`n`n$dated" }
+            Assert-Boundary "Literal duplicate $length/$reverse" $text $false
+        }
+    }
+    foreach ($slashes in 1..4) {
+        $escape = '\' * $slashes
+        $literal = "${escape}<!--`n$plannedHeading`n${escape}-->"
+        foreach ($reverse in @($false, $true)) {
+            $text = if ($reverse) { "$dated`n`n$literal" } else { "$literal`n`n$dated" }
+            Assert-Boundary "Escaped duplicate $slashes/$reverse" $text $false
+        }
+        Assert-Boundary "Escaped literal control $slashes" "${escape}<!--`n`n$dated" ($slashes % 2 -eq 1)
+    }
+
+    foreach ($character in @('`', '~')) {
+        foreach ($length in @(3, 4)) {
+            $open = $character * $length
+            foreach ($info in @('', 'markdown', 'bad`info', 'bad``info', 'escaped\`info', '<!--')) {
+                $valid = $character -eq '~' -or -not $info.Contains('`')
+                Assert-Boundary "Fence info $character/$length/$info" "$open$info`n$plannedHeading`n$open`n`n$dated" $valid
+            }
+            foreach ($indent in 0..4) {
+                $spaces = ' ' * $indent
+                Assert-Boundary "Fence indent $character/$length/$indent" "${spaces}$open`n$plannedHeading`n${spaces}$open`n`n$dated" ($indent -le 3)
+            }
+            foreach ($closingLength in @(($length - 1), $length, ($length + 1))) {
+                $close = $character * $closingLength
+                Assert-Boundary "Fence length $character/$length/$closingLength" "$open`n$plannedHeading`n$close`n`n$dated" ($closingLength -ge $length)
+            }
+            $other = if ($character -eq '`') { '~' * $length } else { '`' * $length }
+            foreach ($close in @($other, "$open suffix", "$open<!-- -->", "    $open")) {
+                Assert-Boundary "Invalid fence close $character/$length/$close" "$open`n$plannedHeading`n$close`n`n$dated" $false
+            }
+        }
+    }
+
+    $rawBlocks = @(
+        @('<pre>', '</pre>'), @('<PRE>', '</PRE>'), @('<script>', '</script>'), @('<style>', '</style>'),
+        @('<div>', '</div>'), @('<textarea>', '</textarea>'), @('<custom attr="value">', '</custom>'),
+        @('</div>', ''), @('<![CDATA[', ']]>'), @('<!DOCTYPE', '>'), @('<?test', '?>')
+    )
+    foreach ($block in $rawBlocks) {
+        $fake = "$($block[0])`n$dated`n$($block[1])"
+        Assert-Boundary "Raw HTML only $($block[0])" $fake $false
+        Assert-Boundary "Raw HTML before real $($block[0])" "$fake`n`n$dated" $false
+        Assert-Boundary "Raw HTML after real $($block[0])" "$dated`n`n$fake" $false
+        Assert-Boundary "Raw HTML in code $($block[0])" "~~~`n$fake`n~~~`n`n$dated" $true
+        Assert-Boundary "Raw HTML in comment $($block[0])" "<!--`n$fake`n-->`n`n$dated" $true
+    }
+    foreach ($comment in @("<!-- ignored -->", " <!--`n$plannedHeading`n -->", "   <!--`n~~~`n$plannedHeading`n``inline`` ```n   -->")) {
+        Assert-Boundary 'Standalone comment before real' "$comment`n`n$dated" $true
+        Assert-Boundary 'Standalone comment after real' "$dated`n`nEnd of notes.`n`n$comment" $true
+        Assert-Boundary 'Only commented target' "<!--`n$dated`n-->" $false
+    }
+    foreach ($ambiguous in @(
+            "<!-- -->## [0.1.0] - Planned", "<!--`n--> ## [0.1.0] - Planned", 'text <!--',
+            '<!-- nested <!-- -->', '<!-- invalid -- body -->', '<!-- unclosed', '-->',
+            '`unclosed', '``unclosed', "``start`n$plannedHeading`n``end", '> quoted', '    indented',
+            "`tindented", ('- outer' + "`n  - nested"), '<https://example.com>', '[ref]: <example>',
+            "text`n-----", "[0.1.0] - Planned`n=====", '***', '_ _ _',
+            '## [0\.1\.0] - Planned', '## [0&#46;1&#46;0] - Planned', '## **[0.1.0]** - Planned')) {
+        Assert-Boundary "Unsupported structure $ambiguous" "$ambiguous`n`n$dated" $false
+    }
+    Assert-Boundary 'Adjacent section after literal control' ('`<!--`' + "`n`n$dated`n`n## [0.2.0] - Planned`n`n### Changed`n`n- Draft.") $true
+    Assert-Boundary 'Escaped code delimiter followed by real comment is unsupported' ('\`<!--' + "`n$plannedHeading`n-->`n`n$dated") $false
+    foreach ($nested in @('- ## [0.1.0] - Planned', '- > quote', '- - nested', '- + nested', '-  indented', '- 1. nested')) {
+        Assert-Boundary "Nested bullet block $nested" "$nested`n`n$dated" $false
+    }
+    foreach ($gap in @("`n", "`n`n", "`ncontinuation`n", "`ncontinuation`n`n")) {
+        foreach ($indent in 1..3) {
+            $spaces = ' ' * $indent
+            foreach ($delimiter in @(@('~~~', '~~~'), @('<!--', '-->'))) {
+                $block = "$spaces$($delimiter[0])`n$plannedHeading`n$spaces$($delimiter[1])"
+                Assert-Boundary "List container delimiter $indent/$gap/$($delimiter[0])" "- Item$gap$block`n`n$dated" $false
+            }
+        }
+    }
+    Assert-Boundary 'Unindented fence ends list container' "- Item`n~~~`n$plannedHeading`n~~~`n`n$dated" $true
+    Write-Output "Release lexical boundary matrix passed: $boundaryCount cases."
+
+    # Check native exit status as used by local validation and release CI.
+    Set-FixtureChangelog $boundaryFixture "$prefix$dated"
+    & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $boundaryFixture 'scripts/Validate-Release.ps1') -Tag v0.1.0 -RepositoryRoot $boundaryFixture *> $null
+    Assert-True ($LASTEXITCODE -eq 0) 'Finalized metadata did not return native success.'
+    Set-FixtureChangelog $boundaryFixture "$prefix$plannedHeading"
+    & (Get-Process -Id $PID).Path -NoProfile -File (Join-Path $boundaryFixture 'scripts/Validate-Release.ps1') -Tag v0.1.0 -RepositoryRoot $boundaryFixture *> $null
+    Assert-True ($LASTEXITCODE -ne 0) 'Invalid metadata did not return native failure.'
+    $global:LASTEXITCODE = 0
     Write-Output 'Release validator regression tests passed.'
 }
 finally {

@@ -35,7 +35,9 @@ jobs:
 
       - name: Validate release metadata
         shell: pwsh
-        run: pwsh ./scripts/Validate-Release.ps1 -Tag $env:RELEASE_TAG
+        run: |
+          & pwsh ./scripts/Validate-Release.ps1 -Tag $env:RELEASE_TAG
+          if ($LASTEXITCODE -ne 0) { throw 'Release metadata validation failed.' }
 
       - name: Run repository validation
         shell: pwsh

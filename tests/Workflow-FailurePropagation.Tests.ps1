@@ -33,6 +33,8 @@ Push-Location $testRoot
 try {
     $env:RELEASE_TAG = 'v0.1.0'
     $cases = @(
+        @{ Workflow = 'release.yml'; Step = 'Validate release metadata'; Commands = 1 },
+        @{ Workflow = 'release.yml'; Step = 'Validate release metadata'; Then = 'Inspect exact release artifact set'; Commands = 2 },
         @{ Workflow = 'release.yml'; Step = 'Inspect exact release artifact set'; Commands = 1 },
         @{ Workflow = 'release.yml'; Step = 'Push package'; Commands = 2 },
         @{ Workflow = 'release.yml'; Step = 'Inspect exact release artifact set'; Then = 'Push package'; Commands = 3 }
@@ -40,6 +42,9 @@ try {
     foreach ($case in $cases) {
         $workflow = Get-Content -Raw (Join-Path $repositoryRoot ".github/workflows/$($case.Workflow)")
         if ($workflow.Contains('continue-on-error:') -or
+            $workflow.IndexOf('- name: Validate release metadata') -lt 0 -or
+            $workflow.IndexOf('- name: Validate release metadata') -ge $workflow.IndexOf('- name: Run repository validation') -or
+            $workflow.IndexOf('- name: Run repository validation') -ge $workflow.IndexOf('- name: Inspect exact release artifact set') -or
             $workflow.IndexOf('- name: Inspect exact release artifact set') -ge $workflow.IndexOf('- name: NuGet login') -or
             $workflow.IndexOf('- name: NuGet login') -ge $workflow.IndexOf('- name: Push package')) {
             throw 'Release validation must stop the job before authentication and publication.'
@@ -63,7 +68,7 @@ try {
             }
         }
     }
-    Write-Output 'Workflow failure propagation passed: paired archive validation and both publication commands fail closed.'
+    Write-Output 'Workflow failure propagation passed: release metadata, paired archives and both publication commands fail closed before subsequent steps.'
 }
 finally {
     $global:LASTEXITCODE = $previousExitCode

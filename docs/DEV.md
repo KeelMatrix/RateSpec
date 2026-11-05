@@ -63,10 +63,29 @@ repository or hidden local feed is needed. See the [consumer smoke guide](../smo
 unique, real, dated target heading in `CHANGELOG.md`, separate from `## [Unreleased]`. Supported release headings are
 unindented `## [X.Y.Z] - YYYY-MM-DD`; draft entries can use `Planned` during development but fail release validation.
 Release categories are ATX headings; the first release has exactly one `Added` category. Ambiguous target heading
-representations (including other depths, indentation, closing hashes and Setext headings) fail closed. Backtick/tilde
-fenced code and HTML comments do not declare release sections; unterminated fences/comments fail validation. Duplicate
-target versions and draft-state/transition markers fail. Adjacent versions have separate content. Structural success
-still requires human editorial review before release authorization.
+representations (including other depths, indentation, closing hashes and Setext headings) fail closed. Duplicate target
+versions and draft-state/transition markers fail. Adjacent versions have separate content. Structural success still
+requires human editorial review before release authorization.
+
+The validator accepts a bounded Markdown subset throughout the changelog, rather than general GitHub Markdown:
+
+- Top-level plain-text ATX headings (no escapes, code, entities or emphasis), unindented paragraphs and flat `- ` bullets.
+  Indented text, nested lists, block quotes,
+  other list markers, link reference definitions and Setext/thematic underline lines are unsupported. Bullet items
+  contain inline text, not nested block syntax; indented fences/comments cannot continue a bullet list.
+- Closed backtick or tilde fences with at least three characters, indented by zero to three spaces. The closing
+  fence uses the same character, at least the opening length, and only trailing whitespace. Backtick fence info
+  strings cannot contain backticks, even escaped ones; tilde info strings can. Fence contents are inert.
+- Standalone HTML comment blocks, with zero to three leading spaces before `<!--` and only whitespace after `-->`.
+  Their contents are inert, including fence delimiters. Nested/malformed comments and unterminated blocks fail.
+  Inline comments and text after a closing comment are unsupported; comments cannot manufacture a heading.
+- Same-line inline code spans closed by a matching backtick run of any length, and backslash escapes. Literal or
+  escaped comment markers remain text and cannot hide following headings. Unmatched/multiline spans fail.
+  Other raw HTML (including tags, CDATA, declarations and processing instructions) and angle autolinks are unsupported
+  outside fences/comments/code. Use escaped text, inline code or ordinary Markdown links instead.
+
+Unsupported or ambiguous input fails release validation even if a Markdown renderer accepts it. This keeps heading
+identity explicit without silently filtering real sections or treating code/HTML text as release evidence.
 
 `scripts/Verify-CommitMessages.ps1` scans complete reachable subject/body text and rejects attribution trailers,
 restricted wording and private numeric work-item references. Its self-test includes valid lookalikes, subject/body
@@ -75,5 +94,6 @@ creating image assets. IDE checks include nested ASP.NET Core launch settings wi
 
 `tests/Validate-Local.Tests.ps1` executes the canonical entry point with inert command substitutes, checking success,
 TEMP-absent portable paths, and immediate failure at every native-command position. Workflow failure tests execute
-actual release archive/publication bodies with inert substitutes. A bad artifact stops before NuGet login or push;
+actual release metadata/archive/publication bodies with inert substitutes, and validator regressions check native
+process exit status. Bad metadata or artifacts stop before NuGet login or push;
 the primary push uses `--no-symbols` and symbols have one explicit subsequent push. Tests do not publish packages.
