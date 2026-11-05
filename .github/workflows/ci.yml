@@ -75,7 +75,21 @@ jobs:
         shell: pwsh
         run: |
           dotnet format src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --verify-no-changes --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Shipping project formatting failed.' }
           dotnet format tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --verify-no-changes --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Test project formatting failed.' }
+
+      - name: Test integer decoding
+        shell: pwsh
+        run: ./tests/Read-BigEndianUInt32.Tests.ps1
+
+      - name: Test workflow failure propagation
+        shell: pwsh
+        run: ./tests/Workflow-FailurePropagation.Tests.ps1
+
+      - name: Test IDE artifact ignores
+        shell: pwsh
+        run: ./tests/Validate-RepositoryIgnore.Tests.ps1
 
       - name: Test release validator
         shell: pwsh
@@ -142,7 +156,9 @@ jobs:
           }
 
           & pwsh ./scripts/Validate-PackageArchive.ps1 -PackagePath $packages[0].FullName -SymbolPackagePath $symbols[0].FullName -AllowMissingIcon
+          if ($LASTEXITCODE -ne 0) { throw 'Package archive validation failed.' }
           & pwsh ./tests/Validate-PackageArchive.Tests.ps1 -PackagePath $packages[0].FullName -SymbolPackagePath $symbols[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Package archive regression tests failed.' }
 
       - name: Audit package dependencies
         shell: pwsh

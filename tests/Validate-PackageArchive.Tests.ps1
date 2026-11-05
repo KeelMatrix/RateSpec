@@ -61,6 +61,10 @@ function Assert-ArchiveRejected {
 
 New-Item -ItemType Directory -Path $testRoot -Force | Out-Null
 try {
+    Invoke-NestedPwsh -NoProfile -File $validatorPath -PackagePath $PackagePath `
+        -SymbolPackagePath $SymbolPackagePath -RepositoryRoot $RepositoryRoot -AllowMissingIcon
+    if ($LASTEXITCODE -ne 0) { throw 'The unmodified package archives failed validation.' }
+
     $extraPackage = Join-Path $testRoot (Split-Path $PackagePath -Leaf)
     $extraSymbols = Join-Path $testRoot (Split-Path $SymbolPackagePath -Leaf)
     Copy-Item -LiteralPath $PackagePath -Destination $extraPackage

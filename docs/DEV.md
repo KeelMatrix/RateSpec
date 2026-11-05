@@ -33,6 +33,15 @@ $symbols = Get-ChildItem artifacts/package -Filter "KeelMatrix.RateSpec.*.snupkg
 pwsh ./scripts/Validate-PackageArchive.ps1 -PackagePath $package.FullName -SymbolPackagePath $symbols.FullName -AllowMissingIcon
 pwsh ./tests/Validate-PackageArchive.Tests.ps1 -PackagePath $package.FullName -SymbolPackagePath $symbols.FullName
 pwsh ./scripts/Verify-CommitMessages.ps1 -SelfTest
+pwsh ./build/Test-NestedPwshLaunch.ps1 -SelfTest
+pwsh ./build/Test-NestedPwshLaunch.ps1
+pwsh ./tests/Read-BigEndianUInt32.Tests.ps1
+pwsh ./tests/Workflow-FailurePropagation.Tests.ps1
+pwsh ./tests/Validate-RepositoryIgnore.Tests.ps1
+pwsh ./tests/Validate-Release.Tests.ps1
+pwsh ./tests/Validate-TextHygiene.Tests.ps1
+pwsh ./tests/Validate-PackageRestore.Tests.ps1
+pwsh ./tests/Validate-VulnerabilityAudit.Tests.ps1
 ```
 
 The package-consumer smoke test is a separate phase because the solution includes the consumer before the local package
@@ -63,3 +72,9 @@ The archive check calls `Validate-PackageArchive.ps1 -AllowMissingIcon` before t
 That explicit pre-release allowance keeps the candidate verifiable without treating a missing `icon.png` as release-ready.
 When `icon.png` is present, the same check requires a 512×512 PNG no larger than 200 KB, `icon.png` package metadata,
 and byte-identical package contents. The archive check also uses an exact allowlist for package and symbol entries.
+Integer-decoding tests cover byte boundaries and unsigned values without creating image assets. The archive regression
+suite validates the original package before testing unexpected entries. Workflow fault-injection tests execute the actual
+multi-command step bodies with inert command substitutes and require each failure to stop the step immediately.
+Both formatting workflows, archive validation, and package/symbol publication explicitly check each native exit code.
+The primary package push uses `--no-symbols` so the subsequent explicit symbol push submits the symbol archive only once.
+IDE artifact checks cover generated settings, including nested ASP.NET Core launch settings, with a missing-pattern control.

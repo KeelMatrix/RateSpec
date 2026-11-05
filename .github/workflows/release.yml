@@ -64,7 +64,9 @@ jobs:
         shell: pwsh
         run: |
           dotnet format src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --verify-no-changes --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Shipping project formatting failed.' }
           dotnet format tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --verify-no-changes --no-restore
+          if ($LASTEXITCODE -ne 0) { throw 'Test project formatting failed.' }
 
       - name: Pack release artifacts
         shell: pwsh
@@ -99,5 +101,7 @@ jobs:
           NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
         run: |
           $version = $env:RELEASE_TAG.Substring(1)
-          dotnet nuget push "artifacts/release/KeelMatrix.RateSpec.$version.nupkg" --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          dotnet nuget push "artifacts/release/KeelMatrix.RateSpec.$version.nupkg" --no-symbols --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { throw 'Package publication failed.' }
           dotnet nuget push "artifacts/release/KeelMatrix.RateSpec.$version.snupkg" --api-key $env:NUGET_API_KEY --source https://api.nuget.org/v3/index.json
+          if ($LASTEXITCODE -ne 0) { throw 'Symbol publication failed.' }

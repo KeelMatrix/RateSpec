@@ -12,6 +12,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot '../build/Read-BigEndianUInt32.ps1')
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 
 function Read-ZipText {
@@ -78,8 +79,8 @@ function Get-PngDimension {
         }
     }
 
-    $width = ($Bytes[16] -shl 24) -bor ($Bytes[17] -shl 16) -bor ($Bytes[18] -shl 8) -bor $Bytes[19]
-    $height = ($Bytes[20] -shl 24) -bor ($Bytes[21] -shl 16) -bor ($Bytes[22] -shl 8) -bor $Bytes[23]
+    $width = Read-BigEndianUInt32 -Bytes $Bytes -Offset 16
+    $height = Read-BigEndianUInt32 -Bytes $Bytes -Offset 20
     return [pscustomobject]@{ Width = $width; Height = $height }
 }
 
