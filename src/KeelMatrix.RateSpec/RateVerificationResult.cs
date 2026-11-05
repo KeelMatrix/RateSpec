@@ -18,7 +18,7 @@ public enum RateVerificationFailureKind
     /// <summary>A supposedly shared partition did not share its consumed budget.</summary>
     ExpectedSharingNotObserved,
 
-    /// <summary>An endpoint expected to be unlimited rejected a request.</summary>
+    /// <summary>An endpoint expected to be unlimited did not satisfy its accepted predicate.</summary>
     UnexpectedLimit,
 
     /// <summary>A response predicate or exact status expectation did not match.</summary>
@@ -33,7 +33,7 @@ public enum RateVerificationFailureKind
     /// <summary>The caller cancellation token was cancelled during verification. An operation cancellation thrown directly by a request factory is also classified here; an HTTP cancellation without caller-token cancellation is <see cref="HostFailure"/>.</summary>
     Cancelled,
 
-    /// <summary>The request factory or HTTP host failed without exposing its exception details, including an HTTP cancellation that did not cancel the caller token.</summary>
+    /// <summary>The request factory, HTTP host, response predicate, or cleanup failed without exposing exception details. Includes HTTP cancellation without caller-token cancellation. Caller-token cancellation takes precedence.</summary>
     HostFailure
 }
 
@@ -51,10 +51,10 @@ public sealed class RateResponseObservation
     /// <summary>Gets the zero-based request number within the request factory sequence.</summary>
     public int RequestNumber { get; }
 
-    /// <summary>Gets the observed status code, when a response was received.</summary>
+    /// <summary>Gets the observed status code, when a response was received, including when later cleanup fails.</summary>
     public int? StatusCode { get; }
 
-    /// <summary>Gets a value indicating whether the expected response contract matched.</summary>
+    /// <summary>Gets a value indicating whether the expected response contract matched. Successful response evaluation is retained even when later cleanup fails.</summary>
     public bool PredicateMatched { get; }
 
     internal bool RequestWasIssued { get; }

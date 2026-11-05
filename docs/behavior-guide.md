@@ -21,8 +21,8 @@ var result = await new RateVerifier().VerifyAsync(new RateContract(client, scena
 ```
 
 RateSpec targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. Release CI validates
-the library tests and formatting on Windows, Linux, and macOS; the package archive and isolated package-consumer gate
-runs on Ubuntu. Earlier .NET versions are not supported.
+the library tests, formatting, package archives, dependency audit, and isolated package-consumer gate on Windows, Linux,
+and macOS. Earlier .NET versions are not supported.
 
 The default accepted predicate is any 2xx response. The default rejection predicate is any non-2xx response, so the application remains free to configure its rejection status. With those defaults, a declared `rejectionStatusCode` must be outside 200-299; a 2xx rejection status contradicts the two default predicates and is rejected while the expectation is created. When either predicate is custom, the verifier still requires the observed rejection response to satisfy the rejected predicate and not satisfy the accepted predicate. A response matching both predicates therefore cannot produce a successful verdict. `BurstWithSuccessStatusRange` uses the default non-2xx rejection predicate, so it also rejects every exact 2xx rejection code during construction, even when the accepted range itself is outside 200-299.
 
@@ -65,6 +65,18 @@ RateExpectation.Burst(
 
 Header predicates are generic and run only on the expected rejection response after the accepted/rejected response predicates have been checked. RateSpec does not promise a particular `Retry-After` value. Current runtime work continues to examine metadata semantics across algorithms, so timing metadata should be asserted only when the application contract deliberately requires it.
 
+Both burst factories require nonempty ASCII HTTP field-name tokens as defined by [RFC 9110](https://www.rfc-editor.org/rfc/rfc9110.html#name-field-names). Names are case-insensitive and must be unique even when duplicate predicates are identical. Invalid names and case-equivalent duplicates throw `ArgumentException` while the expectation is created, before any request factory or HTTP send. Constraints are copied into a read-only dictionary. Response and content headers are supported; absent headers pass `null` to the predicate and multiple values are joined with `, ` in their observed order.
+
+## Failure classifications
+
+An expected accepted response that fails the accepted predicate is `EarlyRejection` only if it matches the configured rejected predicate. An expected rejection that fails the rejected predicate is `MissingRejection` only if it matches the configured accepted predicate. A response matching neither is `StatusMismatch`. These rules use the application's predicates, including non-2xx acceptance and 2xx rejection.
+
+The first response of partition B maps a proven `EarlyRejection` to `PartitionLeakage`. Later B responses retain the ordinary burst classifications. A shared partition's second factory maps a proven `MissingRejection` to `ExpectedSharingNotObserved`. Unlimited mode has only an accepted-response contract; any failed acceptance is `UnexpectedLimit`. An overlapping rejection/acceptance, or an exact rejection-status mismatch, is `StatusMismatch`; a failed header predicate is `HeaderMismatch`. Predicate exceptions produce a sanitized `HostFailure`, with caller cancellation taking precedence.
+
+## Request and response cleanup
+
+After every attempt, RateSpec attempts response disposal and then request disposal independently. Issuance and any observed status survive either cleanup failure. An already evaluated response retains its `PredicateMatched` value even when cleanup prevents a successful scenario. A cleanup failure is `HostFailure`, overriding a predicate mismatch or earlier host failure; caller-token cancellation overrides all of them and returns `Cancelled`, including cancellation during cleanup. Without a cleanup failure or caller cancellation, the original evaluation stands. A factory-thrown `OperationCanceledException` remains `Cancelled` unless cleanup itself fails. Cleanup and predicate exception details are never exposed, and failures never trigger retries.
+
 ## Safety request ceiling
 
 The default verifier ceiling is 100 requests per contract and the hard maximum is 1,000. `RateVerifier(maximumRequestCount: ...)` can impose a smaller ceiling. Counts that would exceed the selected ceiling fail before the first request is created. RateSpec is not a high-volume probe and does not accept an external URL convenience mode.
@@ -85,4 +97,4 @@ RateSpec deliberately verifies initial capacity and rejection only. It does not 
 
 Microsoft warns that partitioning on unbounded user-controlled input can exhaust memory and become a denial-of-service concern. Keep application partition cardinality bounded and intentional; RateSpec does not sanitize or cap the application's partitioner.
 
-The documented path is an in-memory or test-host `HttpClient`. The package makes no hidden network call for verification and does not provide a convenience API for probing arbitrary production addresses. After a verdict with at least one request issued, including a failed verdict or cancellation after a request, it makes one best-effort coarse activation call. Preflight or no-request verdicts make no activation call. The shared telemetry client owns failure isolation, so telemetry failure never changes a verdict; the privacy boundary and opt-out are documented in [Privacy](../PRIVACY.md).
+The documented path is an in-memory or test-host `HttpClient`. The package makes no hidden network call for verification and does not provide a convenience API for probing arbitrary production addresses. After a verdict with at least one request issued, including a failed verdict or cancellation after a request, it makes one best-effort coarse activation call. Successful explicit verification also requests retention through the shared client's `TrackHeartbeat` API. Failed or cancelled results do not request retention; preflight or no-request results request neither event. There is no periodic timer. The shared client owns identity, state, weekly cadence, deduplication, opt-out, delivery and failure isolation; a new activation suppresses retention for that ISO week, and later successful explicit use can supply later-week retention. Telemetry failure never changes a verdict; the privacy boundary and opt-out are documented in [Privacy](../PRIVACY.md).

@@ -17,6 +17,13 @@ function dotnet {
 }
 function pwsh { Invoke-NativeStub }
 
+function Get-StepBody([string] $Workflow, [string] $Step) {
+    $pattern = '(?m)^      - name: ' + [regex]::Escape($Step) + '\r?\n(?:(?:        [^\r\n]*\r?\n))*?        run: \|\r?\n(?<body>(?:          [^\r\n]*(?:\r?\n|$)|\r?\n)+)'
+    $match = [regex]::Match($Workflow, $pattern)
+    if (-not $match.Success) { throw "Missing workflow body: $Step." }
+    return $match.Groups['body'].Value -replace '(?m)^          ', ''
+}
+
 New-Item -ItemType Directory -Path (Join-Path $testRoot 'artifacts/package') -Force | Out-Null
 [IO.File]::WriteAllText((Join-Path $testRoot 'artifacts/package/KeelMatrix.RateSpec.0.1.0.nupkg'), '')
 [IO.File]::WriteAllText((Join-Path $testRoot 'artifacts/package/KeelMatrix.RateSpec.0.1.0.snupkg'), '')
@@ -26,18 +33,20 @@ Push-Location $testRoot
 try {
     $env:RELEASE_TAG = 'v0.1.0'
     $cases = @(
-        @{ Workflow = 'ci.yml'; Step = 'Verify formatting' },
-        @{ Workflow = 'ci.yml'; Step = 'Inspect package archives' },
-        @{ Workflow = 'ci.yml'; Step = 'Test reachable commit message policy'; Commands = 1 },
-        @{ Workflow = 'release.yml'; Step = 'Verify formatting' },
-        @{ Workflow = 'release.yml'; Step = 'Push package' }
+        @{ Workflow = 'release.yml'; Step = 'Inspect exact release artifact set'; Commands = 1 },
+        @{ Workflow = 'release.yml'; Step = 'Push package'; Commands = 2 },
+        @{ Workflow = 'release.yml'; Step = 'Inspect exact release artifact set'; Then = 'Push package'; Commands = 3 }
     )
     foreach ($case in $cases) {
         $workflow = Get-Content -Raw (Join-Path $repositoryRoot ".github/workflows/$($case.Workflow)")
-        $pattern = '(?m)^      - name: ' + [regex]::Escape($case.Step) + '\r?\n(?:(?:        [^\r\n]*\r?\n))*?        run: \|\r?\n(?<body>(?:          [^\r\n]*(?:\r?\n|$)|\r?\n)+)'
-        $match = [regex]::Match($workflow, $pattern)
-        if (-not $match.Success) { throw "Missing workflow body: $($case.Workflow)/$($case.Step)." }
-        $body = [scriptblock]::Create(($match.Groups['body'].Value -replace '(?m)^          ', ''))
+        if ($workflow.Contains('continue-on-error:') -or
+            $workflow.IndexOf('- name: Inspect exact release artifact set') -ge $workflow.IndexOf('- name: NuGet login') -or
+            $workflow.IndexOf('- name: NuGet login') -ge $workflow.IndexOf('- name: Push package')) {
+            throw 'Release validation must stop the job before authentication and publication.'
+        }
+        $text = Get-StepBody $workflow $case.Step
+        if ($case.ContainsKey('Then')) { $text += "`n" + (Get-StepBody $workflow $case.Then) }
+        $body = [scriptblock]::Create($text)
         $commandCount = if ($case.ContainsKey('Commands')) { $case.Commands } else { 2 }
         foreach ($script:failAt in @(0..$commandCount)) {
             $script:callCount = 0
@@ -54,7 +63,7 @@ try {
             }
         }
     }
-    Write-Output 'Workflow failure propagation passed: five bodies, success and each native-command failure.'
+    Write-Output 'Workflow failure propagation passed: paired archive validation and both publication commands fail closed.'
 }
 finally {
     $global:LASTEXITCODE = $previousExitCode

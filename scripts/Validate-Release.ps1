@@ -39,12 +39,67 @@ if ($packageId -ne 'KeelMatrix.RateSpec') {
 
 $changelogPath = Join-Path $RepositoryRoot 'CHANGELOG.md'
 $changelog = Get-Content -Raw $changelogPath
-if ($changelog -notmatch '(?m)^## \[Unreleased\]\s*$') {
+# Read comments and fences in context: comment delimiters inside code are inert.
+$visible = [Collections.Generic.List[string]]::new()
+$fenceCharacter = $null
+$fenceLength = 0
+$inComment = $false
+foreach ($line in ($changelog -split '\r?\n')) {
+    if ($null -ne $fenceCharacter) {
+        if ($line -match ('^ {0,3}' + [regex]::Escape($fenceCharacter) + '{' + $fenceLength + ',}[ \t]*$')) {
+            $fenceCharacter = $null
+        }
+        $visible.Add('')
+        continue
+    }
+    if (-not $inComment -and $line -match '^ {0,3}(?<fence>`{3,}|~{3,})[^\r\n]*$') {
+        $fenceCharacter = $Matches.fence.Substring(0, 1)
+        $fenceLength = $Matches.fence.Length
+        $visible.Add('')
+        continue
+    }
+    $text = ''
+    $position = 0
+    while ($position -lt $line.Length) {
+        if ($inComment) {
+            $end = $line.IndexOf('-->', $position, [StringComparison]::Ordinal)
+            if ($end -lt 0) { $text += ' ' * ($line.Length - $position); break }
+            $text += ' ' * ($end + 3 - $position)
+            $position = $end + 3
+            $inComment = $false
+        }
+        else {
+            $start = $line.IndexOf('<!--', $position, [StringComparison]::Ordinal)
+            if ($start -lt 0) { $text += $line.Substring($position); break }
+            $text += $line.Substring($position, $start - $position)
+            $text += ' ' * 4
+            $position = $start + 4
+            $inComment = $true
+        }
+    }
+    if ($text.Contains('-->')) { throw 'CHANGELOG.md contains an unsupported HTML comment delimiter.' }
+    $visible.Add($text)
+}
+if ($inComment) { throw 'CHANGELOG.md contains an unterminated HTML comment.' }
+if ($null -ne $fenceCharacter) { throw 'CHANGELOG.md contains an unterminated Markdown fence.' }
+$changelog = $visible -join "`n"
+if ($changelog -cnotmatch '(?m)^## \[Unreleased\][ \t]*$') {
     throw 'CHANGELOG.md must retain an Unreleased section.'
 }
 
 $escapedVersion = [regex]::Escape($version)
-$heading = [regex]::Match($changelog, "(?m)^## \[$escapedVersion\] - (?<date>\d{4}-\d{2}-\d{2})\s*$")
+$targetToken = "(?<![\d.])$escapedVersion(?![\d.])"
+$targetHeadings = @([regex]::Matches($changelog, "(?m)^[ \t]*#+[^\r\n]*$targetToken[^\r\n]*$"))
+if ($targetHeadings.Count -gt 1) {
+    throw "CHANGELOG.md must contain one unique real [$version] release heading."
+}
+if ($changelog -match "(?m)^[^\r\n]*$targetToken[^\r\n]*\n {0,3}(?:=+|-+)[ \t]*$") {
+    throw 'CHANGELOG.md release headings must use ## [version] - YYYY-MM-DD.'
+}
+$heading = [regex]::Match($changelog, "(?m)^## \[$escapedVersion\] - (?<date>\d{4}-\d{2}-\d{2})[ \t]*$")
+if ($targetHeadings.Count -eq 1 -and (-not $heading.Success -or $targetHeadings[0].Index -ne $heading.Index)) {
+    throw "CHANGELOG.md must contain a dated [$version] release heading using ## [version] - YYYY-MM-DD."
+}
 if (-not $heading.Success) {
     throw "CHANGELOG.md must contain a dated [$version] release heading."
 }
@@ -62,7 +117,7 @@ else {
     $changelog.Substring($releaseSectionStart)
 }
 
-if ($releaseSection -match '(?i)\bplanned\b|\bunreleased\b|\btbd\b|not yet published') {
+if ($releaseSection -match '(?i)\b(?:planned|unreleased|tbd|tba|draft|pending|unpublished)\b|not(?:[ -]+yet)?[ -]+published|to[ -]+be[ -]+released|coming[ -]+soon') {
     throw "CHANGELOG.md [$version] section is not finalized."
 }
 

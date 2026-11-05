@@ -21,7 +21,7 @@ var result = await new RateVerifier().VerifyAsync(contract, cancellationToken);
 Assert.True(result.Succeeded, result.Message);
 ```
 
-The request factory belongs to the application, so it can provide the headers or route data used by its partition policy. Verification is sequential by default, bounded, cancellable, and never retries automatically. Caller-token cancellation always returns `Cancelled`, even after a valid terminal response; a factory-thrown `OperationCanceledException` is also `Cancelled`, while an HTTP cancellation without caller-token cancellation is `HostFailure`. `RequestsIssued` counts only request messages returned by a factory and handed to `HttpClient`; factory failures before request creation are not counted. A verdict after at least one request, including a failed verdict or cancellation after a request, makes one best-effort coarse activation call; preflight or no-request verdicts do not. The shared telemetry client owns failure isolation and never lets telemetry failure change the result.
+The request factory belongs to the application, so it can provide the headers or route data used by its partition policy. Verification is sequential by default, bounded, cancellable, and never retries automatically. Caller-token cancellation always returns `Cancelled`, even after a valid terminal response; a factory-thrown `OperationCanceledException` is also `Cancelled`, while an HTTP cancellation without caller-token cancellation is `HostFailure`. `RequestsIssued` counts only request messages returned by a factory and handed to `HttpClient`; factory failures before request creation are not counted. A verdict after at least one request, including a failed verdict or cancellation after a request, makes one best-effort coarse activation call; preflight or no-request verdicts do not. Successful explicit verification also requests shared weekly retention; failed, cancelled, preflight and no-request results do not. There is no periodic timer. The shared client owns cadence, deduplication, suppression and failure isolation. Issued counts and received statuses survive request/response cleanup failures, which return `HostFailure` unless the caller token is cancelled. Header names must be valid HTTP tokens and unique ignoring case, or expectation construction fails before traffic.
 
 ## Documentation
 
@@ -32,8 +32,8 @@ RateSpec is designed for in-memory or test-host integration tests. Production ba
 ## Supported Frameworks and Platforms
 
 The package targets `net8.0` and is intended for .NET 8 integration-test projects using ASP.NET Core. Release CI validates
-the library tests and formatting on Windows, Linux, and macOS; the package archive and isolated package-consumer gate
-runs on Ubuntu. Earlier .NET versions are not supported.
+the library tests, formatting, package archives, dependency audit, and isolated package-consumer gate on Windows, Linux,
+and macOS. Earlier .NET versions are not supported.
 
 ## License
 

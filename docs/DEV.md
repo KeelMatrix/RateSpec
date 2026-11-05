@@ -4,84 +4,76 @@ This guide covers local validation for the `KeelMatrix.RateSpec` repository.
 
 ## Prerequisites
 
-- .NET SDK 8.0.425 or a compatible 8.0 SDK patch
-- Network access to `https://api.nuget.org/v3/index.json` for public package restore
+- PowerShell 7 (`pwsh`) on Windows, Linux, or macOS
+- .NET SDK 8.0.425 or a compatible 8.0 SDK patch selected by `global.json`
+- Git with complete, non-shallow repository history
+- Network access to `https://api.nuget.org/v3/index.json` for public restore and vulnerability data
 
 ## Validation
 
-Run focused tests while changing behavior:
+From the repository root, run the canonical full local gate:
 
 ```powershell
-$env:KEELMATRIX_NO_TELEMETRY = "1"
-dotnet test tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj -c Release --no-restore
+pwsh -NoProfile -File ./scripts/Validate-Local.ps1
 ```
 
-The full local gate is:
+The script stops on the first failed native command, disables telemetry for its execution, and reports command durations.
+It restores/builds/tests the library and tests in Release, verifies formatting, runs repository and validator regressions,
+packs the exact artifact pair, validates both archives, performs a real direct/transitive vulnerability audit, and
+restores/builds/runs the isolated package consumer. Both CI and the tag-triggered release workflow use this entry point.
+CI exercises the full gate on Windows, Linux, and macOS. No validation command publishes anything.
+
+For focused work, use the relevant phase; these are partial gates:
 
 ```powershell
-$env:KEELMATRIX_NO_TELEMETRY = "1"
-dotnet restore tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --configfile NuGet.config --packages artifacts/test-packages
-dotnet build tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj -c Release --no-restore
-dotnet test tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj -c Release --no-build --no-restore
-dotnet format src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --verify-no-changes --no-restore
-dotnet format tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj --verify-no-changes --no-restore
-dotnet restore src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj --configfile NuGet.config --packages artifacts/package-packages
-dotnet pack src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj -c Release --no-restore -o artifacts/package
-
-$package = Get-ChildItem artifacts/package -Filter "KeelMatrix.RateSpec.*.nupkg" | Where-Object Name -notlike "*.snupkg"
-$symbols = Get-ChildItem artifacts/package -Filter "KeelMatrix.RateSpec.*.snupkg"
-pwsh ./scripts/Validate-PackageArchive.ps1 -PackagePath $package.FullName -SymbolPackagePath $symbols.FullName -AllowMissingIcon
-pwsh ./tests/Validate-PackageArchive.Tests.ps1 -PackagePath $package.FullName -SymbolPackagePath $symbols.FullName
-pwsh ./scripts/Verify-CommitMessages.ps1 -SelfTest
-pwsh ./build/Test-NestedPwshLaunch.ps1 -SelfTest
-pwsh ./build/Test-NestedPwshLaunch.ps1
-pwsh ./tests/Read-BigEndianUInt32.Tests.ps1
-pwsh ./tests/Workflow-FailurePropagation.Tests.ps1
-pwsh ./tests/Validate-RepositoryIgnore.Tests.ps1
-pwsh ./tests/Validate-Release.Tests.ps1
-pwsh ./tests/Validate-TextHygiene.Tests.ps1
-pwsh ./tests/Validate-PackageRestore.Tests.ps1
-pwsh ./tests/Validate-VulnerabilityAudit.Tests.ps1
+pwsh -NoProfile -File ./scripts/Validate-Local.ps1 -Phase Test
 ```
-
-The package-consumer smoke test is a separate phase because the solution includes the consumer before the local package
-exists. It uses `PackageReference` to the produced package from an isolated local feed:
 
 ```powershell
-$smokePackages = Join-Path $env:TEMP "ratespec-smoke-packages-$([Guid]::NewGuid().ToString('N'))"
-dotnet restore smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj --configfile smoke/NuGet.config --packages $smokePackages --no-cache --force
-pwsh ./scripts/Validate-PackageRestore.ps1 -PackagePath $package.FullName -AssetsFile smoke/RateSpec.ConsumerSmoke/obj/project.assets.json
-dotnet build smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj -c Release --no-restore
-dotnet run --project smoke/RateSpec.ConsumerSmoke/RateSpec.ConsumerSmoke.csproj -c Release --no-build --no-restore
+pwsh -NoProfile -File ./scripts/Validate-Local.ps1 -Phase Package
 ```
 
-The smoke setup creates a fresh restore folder and package source mapping, forces a new resolution, and compares the
-consumer assets-file SHA-512 value with the produced archive. A stale same-version package therefore fails the gate
-instead of silently passing. It does not use a project reference to the shipping library.
+For one behavior test, set `KEELMATRIX_NO_TELEMETRY=1` and run `dotnet test` with the appropriate filter.
+`Test` restores/builds/tests and checks formatting and repository guards. `Package` restores the shipping project,
+packs and validates both artifacts, audits dependencies, and runs the consumer. `All` (the default) performs both phases.
+A final full gate is required after focused changes settle.
 
-`scripts/Verify-CommitMessages.ps1` defines the reachable commit-message validation rules. It scans complete subject/body
-text across all refs and rejects attribution trailers, restricted wording, and private numeric work-item references.
-The numeric-reference check is case-insensitive and covers compact, dash, underscore, horizontal-whitespace, and hash
-separators with token boundaries. `-SelfTest` checks valid lookalikes, rejected subject/body variants, secondary refs,
-and shallow-history rejection before scanning the current repository. A validation failure returns a nonzero exit code;
-CI checks that code explicitly, and the workflow fault-injection suite tests its propagation.
+## Package and consumer checks
 
-The tag-triggered release workflow runs `pwsh ./scripts/Validate-Release.ps1 -Tag vX.Y.Z` before building or publishing. That
-check requires the tag, package version, and a dated, finalized changelog entry to agree. The release job then validates the
-exact `.nupkg` and `.snupkg` set before using NuGet Trusted Publishing.
+The exact artifact set in `artifacts/package` is `KeelMatrix.RateSpec.<version>.nupkg` and
+`KeelMatrix.RateSpec.<version>.snupkg`, using `Directory.Build.props`. Unexpected files fail validation.
+`scripts/Validate-PackageArchive.ps1` owns the archive contract: unique entries, required ZIP structure and nuspec in
+both artifacts, matching ID/version, exact `net8.0` dependency on Telemetry 0.1.1 and framework reference to
+`Microsoft.AspNetCore.App`, symbol package type and PDB, plus package README/license/icon metadata and content.
+The symbol archive is validated before publication can start. Mutation tests exercise both manifests and dependency graphs.
 
-## CI package gate
+The full gate requires the repository-root `icon.png` and its package-root entry: a 512x512 PNG no larger than 200 KB,
+with byte-identical source/package content. Icon checks read existing bytes only. The archive validator's explicit
+`-AllowMissingIcon` option is for incomplete development fixtures and does not satisfy the full gate.
 
-CI runs the Release tests and formatting checks on Ubuntu, Windows, and macOS, then builds the package and symbol package,
-inspects both archives, audits dependencies, and runs the package-consumer smoke test from the generated `.nupkg`.
+The consumer uses `PackageReference`, controlled sources and package source mapping in `smoke/NuGet.config`.
+Each run uses a fresh package cache under `[IO.Path]::GetTempPath()`, with forced uncached resolution. The restore identity
+validator compares the consumer assets-file SHA-512 against the exact produced archive before the consumer builds/runs.
+The temporary package cache is removed afterward; run the phase again to restore a fresh consumer. No sibling source
+repository or hidden local feed is needed. See the [consumer smoke guide](../smoke/RateSpec.ConsumerSmoke/README.md).
 
-The archive check calls `Validate-PackageArchive.ps1 -AllowMissingIcon` before the manually supplied repository icon is present.
-That explicit pre-release allowance keeps the candidate verifiable without treating a missing `icon.png` as release-ready.
-When `icon.png` is present, the same check requires a 512×512 PNG no larger than 200 KB, `icon.png` package metadata,
-and byte-identical package contents. The archive check also uses an exact allowlist for package and symbol entries.
-Integer-decoding tests cover byte boundaries and unsigned values without creating image assets. The archive regression
-suite validates the original package before testing unexpected entries. Workflow fault-injection tests execute the actual
-multi-command step bodies with inert command substitutes and require each failure to stop the step immediately.
-Both formatting workflows, archive validation, and package/symbol publication explicitly check each native exit code.
-The primary package push uses `--no-symbols` so the subsequent explicit symbol push submits the symbol archive only once.
-IDE artifact checks cover generated settings, including nested ASP.NET Core launch settings, with a missing-pattern control.
+## Release metadata and failure propagation
+
+`scripts/Validate-Release.ps1` owns structural release validation. It requires tag/package/version alignment and one
+unique, real, dated target heading in `CHANGELOG.md`, separate from `## [Unreleased]`. Supported release headings are
+unindented `## [X.Y.Z] - YYYY-MM-DD`; draft entries can use `Planned` during development but fail release validation.
+Release categories are ATX headings; the first release has exactly one `Added` category. Ambiguous target heading
+representations (including other depths, indentation, closing hashes and Setext headings) fail closed. Backtick/tilde
+fenced code and HTML comments do not declare release sections; unterminated fences/comments fail validation. Duplicate
+target versions and draft-state/transition markers fail. Adjacent versions have separate content. Structural success
+still requires human editorial review before release authorization.
+
+`scripts/Verify-CommitMessages.ps1` scans complete reachable subject/body text and rejects attribution trailers,
+restricted wording and private numeric work-item references. Its self-test includes valid lookalikes, subject/body
+variants, secondary refs and shallow-history rejection. Integer-decoding tests cover unsigned boundaries without
+creating image assets. IDE checks include nested ASP.NET Core launch settings with a missing-pattern negative control.
+
+`tests/Validate-Local.Tests.ps1` executes the canonical entry point with inert command substitutes, checking success,
+TEMP-absent portable paths, and immediate failure at every native-command position. Workflow failure tests execute
+actual release archive/publication bodies with inert substitutes. A bad artifact stops before NuGet login or push;
+the primary push uses `--no-symbols` and symbols have one explicit subsequent push. Tests do not publish packages.

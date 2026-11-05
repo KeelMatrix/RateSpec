@@ -84,14 +84,70 @@ function Get-PngDimension {
     return [pscustomobject]@{ Width = $width; Height = $height }
 }
 
+function Assert-ArchiveStructure {
+    param([IO.Compression.ZipArchive] $Archive, [string[]] $Required, [string] $Label)
+    $names = @($Archive.Entries | ForEach-Object FullName)
+    if (@($names | Group-Object | Where-Object Count -ne 1).Count -ne 0) {
+        throw "$Label contains duplicate entries."
+    }
+    foreach ($name in @('_rels/.rels', '[Content_Types].xml', 'KeelMatrix.RateSpec.nuspec') + $Required) {
+        if ($names -cnotcontains $name) { throw "$Label is missing required entry '$name'." }
+    }
+    if (@($names | Where-Object { $_ -cmatch '^package/services/metadata/core-properties/[0-9a-f]{32}\.psmdcp$' }).Count -ne 1) {
+        throw "$Label is missing required entry for core properties."
+    }
+}
+
+function Assert-NuspecGraph {
+    param([xml] $Nuspec, [string] $Version, [string] $Label, [switch] $Symbols)
+    $ns = [Xml.XmlNamespaceManager]::new($Nuspec.NameTable)
+    $ns.AddNamespace('n', 'http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd')
+    $nodes = @($Nuspec.SelectNodes('/n:package/n:metadata', $ns))
+    if ($nodes.Count -ne 1) { throw "$Label nuspec metadata is missing or ambiguous." }
+    $m = $nodes[0]
+    if (@($m.SelectNodes('n:id', $ns)).Count -ne 1 -or @($m.SelectNodes('n:version', $ns)).Count -ne 1 -or
+        $m.id -cne 'KeelMatrix.RateSpec' -or $m.version -cne $Version) {
+        throw "$Label identity/version mismatch."
+    }
+    $dependencies = @($m.SelectNodes('n:dependencies/n:group/n:dependency', $ns))
+    $frameworks = @($m.SelectNodes('n:frameworkReferences/n:group/n:frameworkReference', $ns))
+    if (@($m.SelectNodes('n:dependencies', $ns)).Count -ne 1 -or
+        @($m.SelectNodes('n:dependencies/*', $ns)).Count -ne 1 -or
+        @($m.SelectNodes('n:dependencies/n:group/*', $ns)).Count -ne 1 -or
+        $m.dependencies.group.targetFramework -cne 'net8.0' -or
+        $dependencies.Count -ne 1 -or $dependencies[0].id -cne 'KeelMatrix.Telemetry' -or
+        $dependencies[0].version -cne '0.1.1' -or $dependencies[0].exclude -cne 'Build,Analyzers' -or
+        $dependencies[0].Attributes.Count -ne 3 -or $m.dependencies.group.Attributes.Count -ne 1 -or
+        @($m.SelectNodes('n:frameworkReferences', $ns)).Count -ne 1 -or
+        @($m.SelectNodes('n:frameworkReferences/*', $ns)).Count -ne 1 -or
+        @($m.SelectNodes('n:frameworkReferences/n:group/*', $ns)).Count -ne 1 -or
+        $m.frameworkReferences.group.targetFramework -cne 'net8.0' -or
+        $frameworks.Count -ne 1 -or $frameworks[0].name -cne 'Microsoft.AspNetCore.App' -or
+        $frameworks[0].Attributes.Count -ne 1 -or $m.frameworkReferences.group.Attributes.Count -ne 1 -or
+        @($m.SelectNodes('.//*[local-name()="dependency"]')).Count -ne 1 -or
+        @($m.SelectNodes('.//*[local-name()="frameworkReference"]')).Count -ne 1 -or
+        @($m.SelectNodes('.//*[local-name()="group"]')).Count -ne 2 -or
+        @($m.SelectNodes('.//*[local-name()="frameworkAssemblies" or local-name()="references"]')).Count -ne 0) {
+        throw "$Label dependency/framework metadata does not match the intended net8.0 graph."
+    }
+    if ($Symbols -and (@($m.SelectNodes('n:packageTypes/n:packageType', $ns)).Count -ne 1 -or
+            $m.packageTypes.packageType.name -cne 'SymbolsPackage')) {
+        throw 'The symbol package type must be SymbolsPackage.'
+    }
+}
+
 $packageName = [System.IO.Path]::GetFileName($PackagePath)
 if ($packageName -notmatch '^KeelMatrix\.RateSpec\.(?<version>\d+\.\d+\.\d+)\.nupkg$') {
     throw "Unexpected package name '$packageName'."
 }
 
 $version = $Matches.version
+if ([IO.Path]::GetFileName($SymbolPackagePath) -cne "KeelMatrix.RateSpec.$version.snupkg") {
+    throw 'Symbol package filename does not match the primary package identity/version.'
+}
 $archive = [System.IO.Compression.ZipFile]::OpenRead($PackagePath)
 try {
+    Assert-ArchiveStructure $archive @('README.md', 'LICENSE', 'lib/net8.0/KeelMatrix.RateSpec.dll', 'lib/net8.0/KeelMatrix.RateSpec.xml') 'Package'
     $entryNames = @($archive.Entries | ForEach-Object FullName)
     $requiredEntries = @(
         'KeelMatrix.RateSpec.nuspec',
@@ -133,6 +189,7 @@ try {
     }
 
     $nuspec = [xml](Read-ZipText -Archive $archive -EntryName 'KeelMatrix.RateSpec.nuspec')
+    Assert-NuspecGraph $nuspec $version 'Package'
     $namespace = [System.Xml.XmlNamespaceManager]::new($nuspec.NameTable)
     $namespace.AddNamespace('n', 'http://schemas.microsoft.com/packaging/2013/05/nuspec.xsd')
     $metadata = $nuspec.SelectSingleNode('/n:package/n:metadata', $namespace)
@@ -151,11 +208,6 @@ try {
     $repository = $metadata.repository
     if ($repository.type -ne 'git' -or $repository.url -ne 'https://github.com/KeelMatrix/RateSpec') {
         throw 'Package repository metadata is incorrect.'
-    }
-
-    $dependency = @($metadata.dependencies.group.dependency | Where-Object id -eq 'KeelMatrix.Telemetry')
-    if ($dependency.Count -ne 1 -or $dependency[0].version -ne '0.1.1') {
-        throw 'Package dependency metadata is incorrect.'
     }
 
     $iconPath = Join-Path $RepositoryRoot 'icon.png'
@@ -202,6 +254,9 @@ finally {
 
 $symbols = [System.IO.Compression.ZipFile]::OpenRead($SymbolPackagePath)
 try {
+    Assert-ArchiveStructure $symbols @('lib/net8.0/KeelMatrix.RateSpec.pdb') 'Symbol package'
+    $symbolNuspec = [xml](Read-ZipText -Archive $symbols -EntryName 'KeelMatrix.RateSpec.nuspec')
+    Assert-NuspecGraph $symbolNuspec $version 'Symbol package' -Symbols
     $symbolNames = @($symbols.Entries | ForEach-Object FullName)
     if ($symbolNames -notcontains 'lib/net8.0/KeelMatrix.RateSpec.pdb') {
         throw 'Symbol package is missing lib/net8.0/KeelMatrix.RateSpec.pdb.'

@@ -253,6 +253,49 @@ This release is not yet published.
 '@
     Assert-ValidatorRejects -Fixture $unfinalized -ExpectedMessage 'section is not finalized' -Name 'Unfinalized changelog'
 
+    $dated = "## [0.1.0] - 2026-01-01`n`n### Added`n`n- Initial release."
+    $plannedHeading = "## [0.1.0] - Planned`n`n### Added`n`n- Initial release."
+    $prefix = "# Changelog`n`n## [Unreleased]`n`n"
+    $invalidChangelogs = @(
+        "$dated`n`n$plannedHeading",
+        "$plannedHeading`n`n$dated",
+        "$dated`n`n$dated",
+        "$plannedHeading`n`n``````markdown`n$dated`n``````",
+        "$plannedHeading`n`n~~~markdown`n$dated`n~~~",
+        "$plannedHeading`n`n<!--`n$dated`n-->",
+        "<!-- $dated -->",
+        "```````n$dated`n``````",
+        "$dated`n`n```````n<!--`n```````n$plannedHeading`n-->"
+    )
+    foreach ($text in $invalidChangelogs) {
+        $fixture = New-ValidatorFixture
+        Set-FixtureChangelog $fixture "$prefix$text"
+        $result = Invoke-FixtureValidator $fixture
+        Assert-True ($result.ExitCode -ne 0) "Duplicate or non-real target unexpectedly passed: $text"
+    }
+
+    foreach ($heading in @('# [0.1.0] - 2026-01-01', '### [0.1.0] - 2026-01-01', '## 0.1.0 - 2026-01-01',
+            '## [0.1.0] - 2026-01-01 ##', '  ## [0.1.0] - 2026-01-01', '[0.1.0] - 2026-01-01' + "`n------------------")) {
+        foreach ($withReal in @($false, $true)) {
+            $fixture = New-ValidatorFixture
+            $extra = if ($withReal) { "$dated`n`n" } else { '' }
+            Set-FixtureChangelog $fixture "$prefix$extra$heading`n`n### Added`n`n- Initial release."
+            $result = Invoke-FixtureValidator $fixture
+            Assert-True ($result.ExitCode -ne 0) "Ambiguous target heading unexpectedly passed: $heading"
+        }
+    }
+    foreach ($draft in @('Planned', 'UNRELEASED', 'TBD', 'TBA', 'Draft', 'Pending', 'Unpublished', 'not yet published', 'not published', 'not-yet-published', 'to be released', 'to-be-released', 'coming soon')) {
+        $fixture = New-ValidatorFixture
+        Set-FixtureChangelog $fixture "$prefix$dated`n`n$draft"
+        Assert-ValidatorRejects $fixture 'section is not finalized' "Draft marker $draft"
+    }
+    $fixture = New-ValidatorFixture
+    Set-FixtureChangelog $fixture "$prefix$dated`n`n<!--`n$plannedHeading`n-->`n`n~~~`n$plannedHeading`n~~~`n`n## [0.2.0] - Planned`n`n### Changed`n`n- Draft."
+    Assert-ValidatorPasses $fixture 'Real section excludes commented/fenced and adjacent entries'
+    $fixture = New-ValidatorFixture
+    Set-FixtureChangelog $fixture "$prefix$dated`n`n```````n<!--`n```````n`n<!--`n~~~`n$plannedHeading`n-->"
+    Assert-ValidatorPasses $fixture 'Comment and fence delimiters respect their context'
+
     Write-Output 'Release validator regression tests passed.'
 }
 finally {

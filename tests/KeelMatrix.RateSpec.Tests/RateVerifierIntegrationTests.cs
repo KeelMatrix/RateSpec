@@ -719,11 +719,16 @@ public sealed class RateVerifierIntegrationTests
             callNumber => callNumber == 0 ? HttpStatusCode.OK : HttpStatusCode.TooManyRequests));
         var telemetryClient = new Client("RateSpec", typeof(RateVerifier));
         var activationCalls = 0;
+        var retentionCalls = 0;
 
         var result = await new RateVerifier(100, () =>
         {
             telemetryClient.TrackActivation();
             activationCalls++;
+        }, () =>
+        {
+            telemetryClient.TrackHeartbeat();
+            retentionCalls++;
         }).VerifyAsync(
             new RateContract(
                 client,
@@ -734,6 +739,7 @@ public sealed class RateVerifierIntegrationTests
         Assert.True(result.Succeeded, result.Message);
         Assert.Equal(2, result.RequestsIssued);
         Assert.Equal(1, activationCalls);
+        Assert.Equal(1, retentionCalls);
     }
 
     [Fact]

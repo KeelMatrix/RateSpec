@@ -19,4 +19,4 @@
 
 ## Validation
 
-Start with the matching test, then use the Release solution build/test, format verification, package inspection, vulnerability audit, and isolated package-consumer smoke described in `docs/DEV.md`. Do not modify unrelated repositories.
+Start with the matching test, then use the full `pwsh -NoProfile -File ./scripts/Validate-Local.ps1` gate described in `docs/DEV.md`. Do not modify unrelated repositories.

@@ -42,7 +42,7 @@ public sealed class RateExpectation
     /// <param name="acceptedPredicate">Optional predicate for accepted responses; defaults to any 2xx response.</param>
     /// <param name="rejectedPredicate">Optional predicate for the rejection response; defaults to any non-2xx response.</param>
     /// <param name="rejectionStatusCode">Optional exact status code for the rejection response. The status must satisfy the rejection predicate and must not satisfy the accepted predicate. Contradictions that are knowable from the default predicates fail while the expectation is created; custom-predicate overlap is rejected when the response is evaluated.</param>
-    /// <param name="rejectedHeaderPredicates">Optional rejection-header predicates keyed by header name.</param>
+    /// <param name="rejectedHeaderPredicates">Optional rejection-header predicates keyed by valid HTTP field-name tokens. Names must be unique ignoring case; invalid or duplicate declarations throw before execution.</param>
     /// <returns>A validated burst expectation.</returns>
     public static RateExpectation Burst(
         int acceptedRequestCount,
@@ -82,7 +82,7 @@ public sealed class RateExpectation
     /// <param name="minimumStatusCode">The inclusive lower bound of the accepted status-code range.</param>
     /// <param name="maximumStatusCode">The inclusive upper bound of the accepted status-code range.</param>
     /// <param name="rejectionStatusCode">Optional exact status code for the rejection response. The range helper uses the default non-2xx rejection predicate, so this must be outside both the accepted range and 200-299.</param>
-    /// <param name="rejectedHeaderPredicates">Optional rejection-header predicates keyed by header name.</param>
+    /// <param name="rejectedHeaderPredicates">Optional rejection-header predicates keyed by valid HTTP field-name tokens. Names must be unique ignoring case; invalid or duplicate declarations throw before execution.</param>
     /// <returns>A validated burst expectation.</returns>
     public static RateExpectation BurstWithSuccessStatusRange(
         int acceptedRequestCount,
@@ -167,13 +167,16 @@ public sealed class RateExpectation
         {
             foreach (var pair in rejectedHeaderPredicates)
             {
-                if (string.IsNullOrWhiteSpace(pair.Key))
+                if (string.IsNullOrEmpty(pair.Key) || !pair.Key.All(IsFieldNameCharacter))
                 {
-                    throw new ArgumentException("Header predicate names cannot be empty.", nameof(rejectedHeaderPredicates));
+                    throw new ArgumentException("Header predicate names must be valid HTTP field-name tokens.", nameof(rejectedHeaderPredicates));
                 }
 
                 ArgumentNullException.ThrowIfNull(pair.Value, nameof(rejectedHeaderPredicates));
-                headers[pair.Key] = pair.Value;
+                if (!headers.TryAdd(pair.Key, pair.Value))
+                {
+                    throw new ArgumentException("Header predicate names must be unique ignoring case.", nameof(rejectedHeaderPredicates));
+                }
             }
         }
 
@@ -183,8 +186,12 @@ public sealed class RateExpectation
             acceptedPredicate ?? (static response => response.IsSuccessStatusCode),
             rejectedPredicate ?? (static response => !response.IsSuccessStatusCode),
             rejectionStatusCode,
-            headers);
+            new System.Collections.ObjectModel.ReadOnlyDictionary<string, Func<string?, bool>>(headers));
     }
+
+    private static bool IsFieldNameCharacter(char value) =>
+        value is >= 'A' and <= 'Z' or >= 'a' and <= 'z' or >= '0' and <= '9' ||
+        "!#$%&'*+-.^_`|~".Contains(value, StringComparison.Ordinal);
 
     private static void ValidateStatusCode(int statusCode, string parameterName)
     {
