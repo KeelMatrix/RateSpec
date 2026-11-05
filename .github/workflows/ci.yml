@@ -101,7 +101,9 @@ jobs:
 
       - name: Test reachable commit message policy
         shell: pwsh
-        run: pwsh ./scripts/Verify-CommitMessages.ps1 -SelfTest
+        run: |
+          & pwsh ./scripts/Verify-CommitMessages.ps1 -SelfTest
+          if ($LASTEXITCODE -ne 0) { throw 'Commit message validation failed.' }
 
       - name: Test package restore identity validator
         shell: pwsh

@@ -59,6 +59,13 @@ The smoke setup creates a fresh restore folder and package source mapping, force
 consumer assets-file SHA-512 value with the produced archive. A stale same-version package therefore fails the gate
 instead of silently passing. It does not use a project reference to the shipping library.
 
+`scripts/Verify-CommitMessages.ps1` defines the reachable commit-message validation rules. It scans complete subject/body
+text across all refs and rejects attribution trailers, restricted wording, and private numeric work-item references.
+The numeric-reference check is case-insensitive and covers compact, dash, underscore, horizontal-whitespace, and hash
+separators with token boundaries. `-SelfTest` checks valid lookalikes, rejected subject/body variants, secondary refs,
+and shallow-history rejection before scanning the current repository. A validation failure returns a nonzero exit code;
+CI checks that code explicitly, and the workflow fault-injection suite tests its propagation.
+
 The tag-triggered release workflow runs `pwsh ./scripts/Validate-Release.ps1 -Tag vX.Y.Z` before building or publishing. That
 check requires the tag, package version, and a dated, finalized changelog entry to agree. The release job then validates the
 exact `.nupkg` and `.snupkg` set before using NuGet Trusted Publishing.

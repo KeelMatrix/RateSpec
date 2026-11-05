@@ -28,6 +28,7 @@ try {
     $cases = @(
         @{ Workflow = 'ci.yml'; Step = 'Verify formatting' },
         @{ Workflow = 'ci.yml'; Step = 'Inspect package archives' },
+        @{ Workflow = 'ci.yml'; Step = 'Test reachable commit message policy'; Commands = 1 },
         @{ Workflow = 'release.yml'; Step = 'Verify formatting' },
         @{ Workflow = 'release.yml'; Step = 'Push package' }
     )
@@ -37,7 +38,8 @@ try {
         $match = [regex]::Match($workflow, $pattern)
         if (-not $match.Success) { throw "Missing workflow body: $($case.Workflow)/$($case.Step)." }
         $body = [scriptblock]::Create(($match.Groups['body'].Value -replace '(?m)^          ', ''))
-        foreach ($script:failAt in @(0, 1, 2)) {
+        $commandCount = if ($case.ContainsKey('Commands')) { $case.Commands } else { 2 }
+        foreach ($script:failAt in @(0..$commandCount)) {
             $script:callCount = 0
             $global:LASTEXITCODE = 0
             $failed = $false
@@ -46,13 +48,13 @@ try {
                 $failed = $LASTEXITCODE -ne 0
             }
             catch { $failed = $true }
-            $expectedCalls = if ($script:failAt -eq 1) { 1 } else { 2 }
+            $expectedCalls = if ($script:failAt -eq 0) { $commandCount } else { $script:failAt }
             if ($failed -ne ($script:failAt -ne 0) -or $script:callCount -ne $expectedCalls) {
                 throw "$($case.Workflow)/$($case.Step): failure at $script:failAt yielded failed=$failed, calls=$script:callCount."
             }
         }
     }
-    Write-Output 'Workflow failure propagation passed: four bodies, success and each native-command failure.'
+    Write-Output 'Workflow failure propagation passed: five bodies, success and each native-command failure.'
 }
 finally {
     $global:LASTEXITCODE = $previousExitCode
