@@ -4,13 +4,11 @@ Changes for `KeelMatrix.RateSpec` are recorded here.
 
 ## [Unreleased]
 
-The first package release is planned and has not been published.
-
-## [0.1.0] - Planned
+## [0.1.0] - 2026-11-06
 
 ### Added
 
-- Bounded sequential verification of ASP.NET Core initial bursts, rejection behavior, partition isolation, shared partitions, and unlimited endpoints.
-- Predicate-based response classifications and validated rejection-header expectations with cancellation and safety-ceiling enforcement.
-- Content-free observations that retain issued requests and received statuses through cleanup failures.
-- Best-effort activation and successful-use retention through the shared telemetry client, with an explicit opt-out.
+- Verify ASP.NET Core initial bursts, rejection, partition isolation, shared partitions, and bounded sequences on unlimited endpoints through a test-host `HttpClient`.
+- Define accepted and rejected response predicates, exact rejection statuses, and rejection-header expectations, with structured observations and failure verdicts.
+- Run sequential, cancellable checks with request ceilings, no automatic retries, and no sleeps for window replenishment.
+- Receive diagnostics without request URLs, header values, partition identities, response bodies, or raw exception details.
