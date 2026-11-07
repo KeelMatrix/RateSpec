@@ -4,7 +4,7 @@ Changes for `KeelMatrix.RateSpec` are recorded here.
 
 ## [Unreleased]
 
-## [0.1.0] - 2026-11-06
+## [0.1.0] - 2026-11-07
 
 ### Added
 
