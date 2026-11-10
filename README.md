@@ -27,6 +27,8 @@ The request factory belongs to the application, so it can provide the headers or
 
 See the [RateSpec behavior guide](docs/behavior-guide.md) for partition isolation and sharing, unlimited endpoints, custom rejection metadata, cancellation, safety limits, privacy, and the v1 timing boundary. [Development validation](docs/DEV.md) covers building and package-consumer smoke testing.
 
+The repository's [website discovery metadata](docs/DEV.md#website-discovery-metadata) identifies RateSpec as a public product and its primary package, including published versions that predate classification tags.
+
 RateSpec is designed for in-memory or test-host integration tests. Production base addresses and unbounded user-controlled partition cardinality are not v1 targets; the latter can itself exhaust resources. Use a load-testing tool for capacity or throughput questions.
 
 ## Supported Frameworks and Platforms

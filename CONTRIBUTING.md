@@ -10,7 +10,7 @@ Use focused tests for behavior changes. Public API additions belong in the shipp
 
 ## Validation
 
-Run `pwsh -NoProfile -File ./scripts/Validate-Local.ps1` from the repository root. It disables telemetry and checks the Release build/tests, formatting, repository guards, both package archives, direct/transitive vulnerabilities and an isolated exact-package consumer. See [docs/DEV.md](docs/DEV.md) for prerequisites and focused phases.
+Run `pwsh -NoProfile -File ./scripts/Validate-Local.ps1` from the repository root. It disables telemetry and checks the Release build/tests, formatting, repository guards, website discovery metadata, both package archives, direct/transitive vulnerabilities and an isolated exact-package consumer. See [docs/DEV.md](docs/DEV.md) for prerequisites and focused phases.
 
 Report security vulnerabilities using [SECURITY.md](SECURITY.md), not a public issue. Community standards are in [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md).
 

@@ -32,6 +32,17 @@ $previousExitCode = $global:LASTEXITCODE
 Push-Location $testRoot
 try {
     $env:RELEASE_TAG = 'v0.1.0'
+    New-Item -ItemType Directory -Path (Join-Path $testRoot 'scripts') | Out-Null
+    [IO.File]::WriteAllText((Join-Path $testRoot 'scripts/Validate-Local.ps1'), "throw 'Repository validation failed.'")
+    foreach ($name in @('ci.yml', 'release.yml')) {
+        $workflow = Get-Content -Raw (Join-Path $repositoryRoot ".github/workflows/$name")
+        $step = [regex]::Match($workflow, '(?m)^      - name: Run repository validation\r?\n        shell: pwsh\r?\n        run: (?<body>[^\r\n]+)')
+        if (-not $step.Success -or $step.Groups['body'].Value -cne './scripts/Validate-Local.ps1' -or
+            $workflow.Contains('continue-on-error:')) { throw "$name must use the canonical fail-closed repository gate." }
+        $failed = $false
+        try { & ([scriptblock]::Create($step.Groups['body'].Value)) } catch { $failed = $true }
+        if (-not $failed) { throw "$name swallowed a repository validation failure." }
+    }
     $cases = @(
         @{ Workflow = 'release.yml'; Step = 'Validate release metadata'; Commands = 1 },
         @{ Workflow = 'release.yml'; Step = 'Validate release metadata'; Then = 'Inspect exact release artifact set'; Commands = 2 },

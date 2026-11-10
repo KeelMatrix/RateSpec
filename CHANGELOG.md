@@ -4,6 +4,10 @@ Changes for `KeelMatrix.RateSpec` are recorded here.
 
 ## [Unreleased]
 
+### Changed
+
+- Make RateSpec discoverable as a public product through repository classification metadata.
+
 ## [0.1.0] - 2026-11-07
 
 ### Added

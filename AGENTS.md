@@ -6,6 +6,7 @@
 - `tests/KeelMatrix.RateSpec.Tests` contains in-memory ASP.NET Core behavior coverage.
 - `smoke/RateSpec.ConsumerSmoke` validates the built package through `PackageReference`.
 - `docs/behavior-guide.md` is the consumer behavior contract; `docs/DEV.md` is the local validation guide.
+- `keelmatrix.website.json` declares package classification; `scripts/Validate-WebsiteMetadata.ps1` checks it against evaluated source and built package metadata.
 - `artifacts/` is disposable local package and build output and is ignored by Git.
 
 ## Invariants

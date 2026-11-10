@@ -19,7 +19,7 @@ pwsh -NoProfile -File ./scripts/Validate-Local.ps1
 
 The script stops on the first failed native command, disables telemetry for its execution, and reports command durations.
 It restores/builds/tests the library and tests in Release, verifies formatting, runs repository and validator regressions,
-packs the exact artifact pair, validates both archives, performs a real direct/transitive vulnerability audit, and
+checks website discovery metadata, packs the exact artifact pair, validates both archives, performs a real direct/transitive vulnerability audit, and
 restores/builds/runs the isolated package consumer. Both CI and the tag-triggered release workflow use this entry point.
 CI exercises the full gate on Windows, Linux, and macOS. No validation command publishes anything.
 
@@ -37,6 +37,23 @@ For one behavior test, set `KEELMATRIX_NO_TELEMETRY=1` and run `dotnet test` wit
 `Test` restores/builds/tests and checks formatting and repository guards. `Package` restores the shipping project,
 packs and validates both artifacts, audits dependencies, and runs the consumer. `All` (the default) performs both phases.
 A final full gate is required after focused changes settle.
+
+## Website discovery metadata
+
+The root `keelmatrix.website.json` is the per-package classification declaration. Schema version 1 classifies
+`KeelMatrix.RateSpec` as `public-product` and the family's single `primary` artifact. The manifest also classifies
+already-published versions that predate sentinel tags, without changing or republishing those immutable versions.
+Future normal releases carry matching `keelmatrix-public-product` and `keelmatrix-primary` tags alongside the existing tags.
+Both project and repository URLs remain `https://github.com/KeelMatrix/RateSpec`.
+
+Run `pwsh -NoProfile -File ./scripts/Validate-WebsiteMetadata.ps1` for the source check. It evaluates Release MSBuild
+properties, including inherited settings, for every packable project. It rejects malformed or duplicate manifest fields,
+unsupported schema/classifications, missing/extra/case-mismatched package IDs, missing/duplicate/conflicting/wrong-case
+sentinels, multiple or missing primaries, and noncanonical URLs. Supply `-PackagePath` and `-SymbolPackagePath` to check
+both built archives against the manifest and evaluated source, including all tags. The full local gate runs the source
+check before either phase, and the built checks before archive inspection and consumer restore. CI and release validation
+inherit these checks through the same entry point; metadata failure stops validation before publication credentials are used.
+`tests/Validate-WebsiteMetadata.Tests.ps1` covers this metadata family with small fixtures and a native-process failure check.
 
 ## Package and consumer checks
 

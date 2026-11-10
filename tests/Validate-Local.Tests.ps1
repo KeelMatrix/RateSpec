@@ -36,6 +36,11 @@ try {
     & $validator -RepositoryRoot $testRoot -Phase All 6>&1 | Out-Null
     if ($env:KEELMATRIX_NO_TELEMETRY -ne '0' -or $env:DOTNET_CLI_TELEMETRY_OPTOUT -ne '0') { throw 'Validation did not restore caller telemetry settings.' }
     $commands = $localValidationState.Calls.ToArray()
+    if ($commands[0] -notmatch 'Validate-WebsiteMetadata.ps1$' -or
+        @($commands | Where-Object { $_ -match 'Validate-WebsiteMetadata.ps1 -PackagePath .* -SymbolPackagePath ' }).Count -ne 1 -or
+        @($commands | Where-Object { $_ -match 'Validate-WebsiteMetadata.Tests.ps1$' }).Count -ne 1) {
+        throw 'Missing source/built website metadata validation or its regressions.'
+    }
     if (-not ($commands | Where-Object { $_ -match '^list .*--vulnerable --include-transitive' })) { throw 'Missing actual transitive vulnerability audit.' }
     if (-not ($commands | Where-Object { $_ -match '^restore smoke/.*--no-cache --force' })) { throw 'Missing isolated consumer restore.' }
     if (-not ($commands | Where-Object { $_ -match 'Validate-PackageRestore.ps1' })) { throw 'Missing exact-package consumer validation.' }
@@ -59,7 +64,7 @@ try {
         $failed = $false
         try { & $validator -RepositoryRoot $testRoot -Phase Package 6>&1 | Out-Null }
         catch { $failed = $true }
-        if (-not $failed -or $localValidationState.Calls.Count -ne 2) { throw 'Ambiguous or missing package version reached artifact consumers.' }
+        if (-not $failed -or $localValidationState.Calls.Count -ne 3) { throw 'Ambiguous or missing package version reached artifact consumers.' }
     }
     Write-Output "Local entry point failure propagation passed: $($commands.Count) command positions, TEMP absent."
 }

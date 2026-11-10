@@ -27,6 +27,7 @@ try {
     $env:DOTNET_CLI_TELEMETRY_OPTOUT = '1'
     $tests = 'tests/KeelMatrix.RateSpec.Tests/KeelMatrix.RateSpec.Tests.csproj'
     $shipping = 'src/KeelMatrix.RateSpec/KeelMatrix.RateSpec.csproj'
+    Invoke-Checked Invoke-NestedPwsh @('-NoProfile', '-File', './scripts/Validate-WebsiteMetadata.ps1')
     if ($Phase -in @('All', 'Test')) {
         Invoke-Checked dotnet @('restore', $tests, '--configfile', 'NuGet.config', '--packages', 'artifacts/test-packages')
         Invoke-Checked dotnet @('build', $tests, '-c', 'Release', '--no-restore')
@@ -38,7 +39,7 @@ try {
         Invoke-Checked Invoke-NestedPwsh @('-NoProfile', '-File', './build/Test-NestedPwshLaunch.ps1', '-SelfTest')
         Invoke-Checked Invoke-NestedPwsh @('-NoProfile', '-File', './build/Test-NestedPwshLaunch.ps1')
         foreach ($suite in @('Read-BigEndianUInt32', 'Workflow-FailurePropagation', 'Validate-Local', 'Validate-RepositoryIgnore',
-                'Validate-Release', 'Validate-TextHygiene', 'Validate-PackageRestore', 'Validate-VulnerabilityAudit')) {
+                'Validate-Release', 'Validate-TextHygiene', 'Validate-PackageRestore', 'Validate-VulnerabilityAudit', 'Validate-WebsiteMetadata')) {
             Invoke-Checked Invoke-NestedPwsh @('-NoProfile', '-File', "./tests/$suite.Tests.ps1")
         }
     }
@@ -57,6 +58,7 @@ try {
         if ($files.Count -ne 2 -or @($files | Where-Object Name -cnotin $expected).Count -ne 0) {
             throw "Expected exactly $($expected -join ' and ')."
         }
+        Invoke-Checked Invoke-NestedPwsh @('-NoProfile', '-File', './scripts/Validate-WebsiteMetadata.ps1', '-PackagePath', $package, '-SymbolPackagePath', $symbols)
         Invoke-Checked Invoke-NestedPwsh @('-NoProfile', '-File', './scripts/Validate-PackageArchive.ps1', '-PackagePath', $package, '-SymbolPackagePath', $symbols)
         Invoke-Checked Invoke-NestedPwsh @('-NoProfile', '-File', './tests/Validate-PackageArchive.Tests.ps1', '-PackagePath', $package, '-SymbolPackagePath', $symbols)
         $audit = @(Invoke-Checked dotnet @('list', $shipping, 'package', '--vulnerable', '--include-transitive', '--format', 'json', '--output-version', '1', '--configfile', 'NuGet.config'))

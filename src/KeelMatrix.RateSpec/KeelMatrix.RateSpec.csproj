@@ -6,7 +6,7 @@
     <IsTestProject>false</IsTestProject>
     <PackageId>KeelMatrix.RateSpec</PackageId>
     <Description>Verify ASP.NET Core rate-limit bursts, rejection, and partition isolation with deterministic integration tests.</Description>
-    <PackageTags>aspnetcore;rate-limiting;ratelimiter;testing;http;api;integration-testing</PackageTags>
+    <PackageTags>aspnetcore;rate-limiting;ratelimiter;testing;http;api;integration-testing;keelmatrix-public-product;keelmatrix-primary</PackageTags>
     <EnablePublicApiAnalyzers>true</EnablePublicApiAnalyzers>
     <Authors>KeelMatrix</Authors>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
